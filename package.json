@@ -1,0 +1,39 @@
+{
+  "name": "trace-launcher",
+  "version": "0.1.0",
+  "description": "A fast, minimal web UI for launching trace_processor_shell HTTP servers from a directory of traces.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18.19"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,ui -c blue,magenta npm:dev:api npm:dev:ui",
+    "dev:api": "tsx watch server/index.ts --tp-binary fixtures/fake-tp --traces-dir fixtures/traces --recursive-search --metadata-db fixtures/metadata.db --metadata-table traces",
+    "dev:ui": "vite",
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "seed": "node fixtures/make-metadata-db.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "node --import tsx --test server/*.test.ts src/base/*.test.ts",
+    "fmt": "prettier --write \"{server,src,shared}/**/*.{ts,scss}\" \"*.{json,md}\"",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.21.2",
+    "mithril": "^2.2.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/mithril": "^2.2.6",
+    "@types/node": "^20.14.0",
+    "concurrently": "^9.1.0",
+    "prettier": "^3.3.3",
+    "sass": "^1.80.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

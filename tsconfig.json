@@ -1,0 +1,32 @@
+{
+  // Type-checking config for the browser SPA (src/) and the shared protocol.
+  // The server has its own config (tsconfig.server.json) so the DOM and Node
+  // global namespaces never leak into each other.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "useDefineForClassFields": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  // Test files run under Node and are type-checked by tsconfig.server.json,
+  // which has the Node globals; the browser config skips them.
+  "include": ["src", "shared"],
+  "exclude": ["**/*.test.ts"]
+}

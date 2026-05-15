@@ -1,0 +1,29 @@
+{
+  // Type-checking config for the Node API server (server/) and the shared
+  // protocol. Kept separate from the SPA config so server code is checked
+  // against Node globals only, never the DOM.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  // src/base holds DOM-free utilities (and their tests), which run under Node.
+  "include": ["server", "shared", "src/base"]
+}

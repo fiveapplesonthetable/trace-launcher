@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Trace Launcher</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      try {
+        var saved = localStorage.getItem('trace-launcher.theme');
+        document.documentElement.dataset.theme =
+          saved === 'light' ? 'light' : 'dark';
+      } catch (e) {
+        /* localStorage unavailable — fall back to the default dark theme. */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

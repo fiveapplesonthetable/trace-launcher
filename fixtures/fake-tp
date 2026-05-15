@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# A stand-in for trace_processor_shell, used by `npm run dev` and the e2e tests.
+#
+# trace-launcher invokes it as:
+#   fake-tp server --ip-address <addr> --port <port> http <trace>
+#
+# Behaviour is keyed off the trace filename so the UI's edge cases can be
+# exercised deterministically:
+#   *crash*  -> exits non-zero immediately      (UI shows a crashed child)
+#   *hang*   -> sleeps forever, never binds      (UI shows a stuck "starting")
+#   *slow*   -> waits a few seconds, then binds  (UI shows "starting" -> "live")
+#   default  -> binds the port at once           (UI shows "live")
+set -u
+
+addr="127.0.0.1"
+port="0"
+trace=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ip-address) addr="$2"; shift 2 ;;
+    --port) port="$2"; shift 2 ;;
+    server | http) shift ;;
+    *) trace="$1"; shift ;;
+  esac
+done
+
+case "$trace" in
+  *crash*)
+    echo "fake-tp: simulating a crash for $trace" >&2
+    exit 1
+    ;;
+  *hang*)
+    echo "fake-tp: simulating a hang for $trace" >&2
+    sleep 100000
+    ;;
+  *slow*)
+    sleep 4
+    ;;
+esac
+
+# Bind the port so trace-launcher sees the child as "live". This is not a real
+# trace_processor server — it just holds the port for the UI to observe.
+exec python3 -m http.server "$port" --bind "$addr"
