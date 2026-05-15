@@ -42,9 +42,15 @@ export class OutOfPortsError extends Error {
  * Hands out free TCP ports from a fixed `[base, base + count)` range,
  * round-robin so a freed port is not immediately reused. Callers pass the set
  * of ports they already hold so the allocator can skip them without probing.
+ *
+ * Allocation is serialised: two concurrent allocate() calls won't probe the
+ * same port and both win the race. The mutex is a simple promise chain — at
+ * the rates this server runs at (a click per second at most), the queueing
+ * cost is unmeasurable.
  */
 export class PortAllocator {
   private nextOffset = 0;
+  private chain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly host: string,
@@ -52,8 +58,15 @@ export class PortAllocator {
     private readonly count: number,
   ) {}
 
-  async allocate(inUse: Iterable<number>): Promise<number> {
-    const used = new Set(inUse);
+  allocate(inUse: Iterable<number>): Promise<number> {
+    const next = this.chain.then(() => this.allocateOne(new Set(inUse)));
+    // Keep the chain alive even if this attempt rejects; subsequent callers
+    // must still get a fair shot at the allocator.
+    this.chain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async allocateOne(used: Set<number>): Promise<number> {
     for (let i = 0; i < this.count; i++) {
       const port = this.base + this.nextOffset;
       this.nextOffset = (this.nextOffset + 1) % this.count;

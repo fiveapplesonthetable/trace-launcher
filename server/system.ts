@@ -17,7 +17,12 @@ export function hostMemory(): ResourceUsage {
     const fields = new Map<string, number>();
     for (const line of meminfo.split('\n')) {
       const match = /^(\w+):\s+(\d+)\s*kB/.exec(line);
-      if (match) fields.set(match[1] as string, Number(match[2]) * 1024);
+      if (match === null) continue;
+      const [, key, kB] = match;
+      // Both capture groups are present whenever .exec returns non-null, but
+      // TS doesn't model that — guard explicitly rather than asserting.
+      if (key === undefined || kB === undefined) continue;
+      fields.set(key, Number(kB) * 1024);
     }
     const total = fields.get('MemTotal') ?? 0;
     const available = fields.get('MemAvailable') ?? fields.get('MemFree') ?? 0;

@@ -47,6 +47,12 @@ export class ProcessManager {
    * recently-crashed children until they age out of CRASH_TTL_MS.
    */
   private readonly children = new Map<string, Child>();
+  /**
+   * Promises for in-flight ensureChild() calls, keyed by trace. A second
+   * call for the same trace awaits the first instead of racing it — this is
+   * what makes rapid double-clicks collapse into a single child.
+   */
+  private readonly inFlight = new Map<string, Promise<Child>>();
   private readonly allocator: PortAllocator;
 
   constructor(
@@ -62,17 +68,36 @@ export class ProcessManager {
 
   /**
    * Starts a trace_processor_shell server for `traceKey`, or returns quietly
-   * if one is already live for that trace. Idempotent, so rapid double-clicks
-   * collapse into a single child rather than racing.
+   * if one is already live for that trace. Idempotent: rapid double-clicks
+   * (or concurrent batch operations) collapse into a single child via the
+   * inFlight map.
    */
   async ensureChild(traceKey: string): Promise<void> {
+    await this.ensureChildInternal(traceKey);
+  }
+
+  private ensureChildInternal(traceKey: string): Promise<Child> {
     const trace = this.catalog.validate(traceKey);
     this.expireCrashed();
 
     const existing = this.children.get(trace);
-    if (existing && existing.exit === null) return; // already live/starting
+    if (existing && existing.exit === null) return Promise.resolve(existing);
+
+    const pending = this.inFlight.get(trace);
+    if (pending !== undefined) return pending;
+
     if (existing) this.children.delete(trace); // crashed leftover — replace it
 
+    const promise = this.spawnChild(trace).finally(() => {
+      // Always clear the in-flight slot, success or failure — the next call
+      // either finds the child in `children` or starts over.
+      if (this.inFlight.get(trace) === promise) this.inFlight.delete(trace);
+    });
+    this.inFlight.set(trace, promise);
+    return promise;
+  }
+
+  private async spawnChild(trace: string): Promise<Child> {
     const port = await this.allocator.allocate(this.livePorts());
     const proc = spawn(
       this.tpBinary,
@@ -110,6 +135,7 @@ export class ProcessManager {
       child.exit = {code, signal, exitedMs: Date.now()};
     });
     this.children.set(trace, child);
+    return child;
   }
 
   /**
@@ -123,12 +149,11 @@ export class ProcessManager {
     if (this.prewarmer === undefined) {
       throw new Error('prewarm is not configured on this server');
     }
-    await this.ensureChild(traceKey);
-    const trace = this.catalog.validate(traceKey);
-    const child = this.children.get(trace);
-    if (child === undefined || child.exit !== null) {
-      throw new Error(`no live child for ${trace}`);
-    }
+    // Use the child returned by ensureChildInternal directly — looking it up
+    // through this.children afterwards opens a window where a concurrent
+    // stop() could have removed it.
+    const child = await this.ensureChildInternal(traceKey);
+    if (child.exit !== null || child.stopping) return;
     if (child.prewarm === 'prewarming' || child.prewarm === 'prewarmed') {
       return; // already in flight or done
     }
@@ -284,8 +309,24 @@ function terminate(child: Child): void {
   setTimeout(() => killGroup(pid, 'SIGKILL'), KILL_GRACE_MS).unref();
 }
 
-/** Signals the child's whole process group (children are spawned detached). */
+/**
+ * Signals the child's whole process group (children are spawned detached).
+ *
+ * Hardened against the "negative pid footgun": `process.kill(-1, sig)` would
+ * fan out the signal to every process this server owns, taking the host
+ * down with it. Even though the only caller passes a pid from `child.pid`
+ * (set at spawn time, so always > 1 in practice), we refuse implausibly low
+ * pids defensively. The check is one comparison; the upside is the host
+ * survives a future refactor that accidentally passes 0 or 1.
+ */
 function killGroup(pid: number, signal: NodeJS.Signals): void {
+  if (!Number.isInteger(pid) || pid < 100) {
+    process.stderr.write(
+      `process_manager: refusing to signal pgid=${pid} (` +
+        `implausibly low — would risk killing system processes)\n`,
+    );
+    return;
+  }
   try {
     process.kill(-pid, signal);
   } catch {

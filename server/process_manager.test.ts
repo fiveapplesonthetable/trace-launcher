@@ -142,3 +142,63 @@ test('stopAll reaps every child', async (t) => {
   assert.equal(manager.stopAll(), 2);
   assert.equal((await manager.snapshot()).length, 0);
 });
+
+test('concurrent ensureChild for the same trace collapses to one spawn', async (t) => {
+  const {manager, addTrace} = setup(t, 'exec sleep 30');
+  const trace = addTrace('sample.pftrace');
+
+  // Five concurrent starts must produce exactly one child. Without the
+  // in-flight dedup the second waiter spawns a second child and leaks both
+  // the orphan process and its allocated port.
+  await Promise.all([
+    manager.ensureChild(trace),
+    manager.ensureChild(trace),
+    manager.ensureChild(trace),
+    manager.ensureChild(trace),
+    manager.ensureChild(trace),
+  ]);
+
+  const snapshot = await manager.snapshot();
+  assert.equal(snapshot.length, 1, 'exactly one tracked child');
+});
+
+test('concurrent ensureChild on distinct traces never collides on a port', async (t) => {
+  const {manager, addTrace} = setup(t, 'exec sleep 30');
+  const traces = Array.from({length: 10}, (_, i) => addTrace(`t${i}.pftrace`));
+
+  // Fire all ten starts in parallel — the port allocator must hand out
+  // distinct ports without anyone winning a TOCTOU race on the same port.
+  await Promise.all(traces.map((tr) => manager.ensureChild(tr)));
+
+  const snapshot = await manager.snapshot();
+  const ports = snapshot.map((c) => c.port).sort((a, b) => a - b);
+  assert.equal(ports.length, traces.length);
+  assert.equal(new Set(ports).size, ports.length, 'every port is unique');
+});
+
+test('a child killed by SIGKILL (OOM) surfaces signal in exit', async (t) => {
+  // A trace_processor killed by the kernel OOM killer dies with SIGKILL and
+  // no exit code; the manager must report the signal so the UI can render
+  // "killed" rather than a misleading "crashed (exit 0)".
+  const {manager, addTrace} = setup(t, 'exec sleep 30');
+  const trace = addTrace('hungry.pftrace');
+
+  await manager.ensureChild(trace);
+  const before = await manager.snapshot();
+  const pid = before[0]?.pid;
+  // Tightened beyond `pid > 0`: any small pid here would mean we're about to
+  // signal a system process (init=1, kthreadd=2, systemd, sshd, …). Refuse
+  // loudly rather than nuke the host if a spawn ever returns nonsense.
+  assert.ok(pid !== undefined && pid > 100, `unsafe pid for kill: ${pid}`);
+
+  // Simulate OOM: kill the whole process group (children spawn detached, so
+  // -pid signals the group, mirroring how the kernel reaps an OOM victim).
+  process.kill(-pid, 'SIGKILL');
+  await sleep(300);
+
+  const snapshot = await manager.snapshot();
+  assert.equal(snapshot.length, 1);
+  assert.equal(snapshot[0]?.status, 'crashed');
+  assert.equal(snapshot[0]?.exit?.signal, 'SIGKILL');
+  assert.equal(snapshot[0]?.exit?.code, null);
+});

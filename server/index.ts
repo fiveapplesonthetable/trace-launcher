@@ -140,16 +140,22 @@ function main(argv: readonly string[]): void {
     }
   });
 
+  // process_manager schedules SIGKILL `KILL_GRACE_MS` (5 s) after SIGTERM for
+  // each child. The shutdown backstop must outlive that, otherwise we exit
+  // before the kernel reaps the trace_processors and they become orphans.
+  const SHUTDOWN_BACKSTOP_MS = 8_000;
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
     shuttingDown = true;
     const stopped = processes.stopAll();
     metadata?.close();
+    // Close the headless browser. Awaiting is best-effort here — if it hangs,
+    // the backstop below still exits the process.
     void prewarmer.close();
     log(`\n${signal} — stopped ${stopped} trace processor(s), exiting.`);
     server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 3000).unref();
+    setTimeout(() => process.exit(0), SHUTDOWN_BACKSTOP_MS).unref();
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
