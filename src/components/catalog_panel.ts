@@ -13,7 +13,7 @@ import {Icon} from '../widgets/icon';
 import {MiddleEllipsis} from '../widgets/middle_ellipsis';
 import {ProgressBar} from '../widgets/progress_bar';
 import {ColumnPicker} from './column_picker';
-import {FilterChips, FilterControl} from './filter_bar';
+import {FilterBar} from './filter_bar';
 
 // The catalog: a configurable-column table of trace files for the current
 // directory / search / filters. Directories are listed first for navigation;
@@ -444,7 +444,7 @@ export class CatalogPanel implements m.ClassComponent {
     return m('section.pf-tl-panel', [
       this.head(traces.length),
       this.toolbar(),
-      m(FilterChips),
+      m(FilterBar),
       m(Breadcrumb),
       m(DirInfo),
       catalog?.truncated === true
@@ -536,7 +536,7 @@ export class CatalogPanel implements m.ClassComponent {
           },
         }),
       ]),
-      m('.pf-tl-toolbar__tools', [m(FilterControl), m(ColumnPicker)]),
+      m('.pf-tl-toolbar__tools', m(ColumnPicker)),
     ]);
   }
 
