@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {parseArgs} from 'node:util';
 
@@ -17,6 +18,12 @@ export interface LaunchOptions {
   readonly port: number;
   readonly tpPortBase: number;
   readonly tpPortCount: number;
+  /**
+   * Workers in flight for batch operations (Start all shown / Prewarm all
+   * shown). Defaults to `Math.min(8, max(2, nproc))`; override via
+   * `--batch-concurrency` for tightly-resourced or beefy boxes.
+   */
+  readonly batchConcurrency: number;
   readonly maxResults: number;
   readonly recursiveSearch: boolean;
   /** Optional SQLite metadata DB; null disables the whole metadata layer. */
@@ -47,6 +54,8 @@ Options:
   --port <n>                 port for the UI + API (default 9002)
   --tp-port-base <n>         first backend trace_processor port (default 19000)
   --tp-port-count <n>        size of the backend port range (default 4096)
+  --batch-concurrency <n>    workers for "Start all shown" / "Prewarm all shown"
+                             (default: clamp(nproc, 2, 8))
   --max-results <n>          max traces shown per page; 0 = unlimited (default 5000)
   --recursive-search         search recursively under --traces-dir
 
@@ -87,6 +96,7 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
         port: {type: 'string', default: '9002'},
         'tp-port-base': {type: 'string', default: '19000'},
         'tp-port-count': {type: 'string', default: '4096'},
+        'batch-concurrency': {type: 'string'},
         'max-results': {type: 'string', default: '5000'},
         'recursive-search': {type: 'boolean', default: false},
         'metadata-db': {type: 'string'},
@@ -126,12 +136,27 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
   const tpPortCount = toInt(asString(values['tp-port-count'], '4096'), '--tp-port-count');
   const maxResults = toInt(asString(values['max-results'], '5000'), '--max-results');
 
+  // Default the batch worker count to the host's CPU count, clamped to a
+  // sensible range. The cap (8) reflects that even on big boxes the
+  // prewarmer's headless Chrome is the bottleneck — more workers than
+  // ~CPU/2 thrash it. Min 2 keeps batches parallel even on tiny VMs.
+  const cpus = Math.max(1, os.cpus().length);
+  const defaultBatchConcurrency = Math.max(2, Math.min(8, cpus));
+  const batchConcurrencyRaw = values['batch-concurrency'];
+  const batchConcurrency =
+    typeof batchConcurrencyRaw === 'string'
+      ? toInt(batchConcurrencyRaw, '--batch-concurrency')
+      : defaultBatchConcurrency;
+
   if (port < 1 || port > 65535) throw new UsageError('--port is out of range');
   if (tpPortBase < 1 || tpPortBase > 65535) {
     throw new UsageError('--tp-port-base is out of range');
   }
   if (tpPortCount < 1 || tpPortBase + tpPortCount - 1 > 65535) {
     throw new UsageError('--tp-port-count makes an invalid port range');
+  }
+  if (batchConcurrency < 1 || batchConcurrency > 64) {
+    throw new UsageError('--batch-concurrency must be between 1 and 64');
   }
   if (maxResults < 0) throw new UsageError('--max-results must be >= 0');
 
@@ -163,6 +188,7 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
     port,
     tpPortBase,
     tpPortCount,
+    batchConcurrency,
     maxResults,
     recursiveSearch: values['recursive-search'] === true,
     metadataDb,

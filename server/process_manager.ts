@@ -1,6 +1,7 @@
 import {spawn} from 'node:child_process';
 import type {ChildProcess} from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 
@@ -18,6 +19,49 @@ import {processRss} from './system';
 const CRASH_TTL_MS = 60_000;
 /** Grace period between SIGTERM and SIGKILL when stopping a child. */
 const KILL_GRACE_MS = 5_000;
+
+/**
+ * Default parallelism for batch operations (Start all shown / Prewarm all
+ * shown). Sized to the host CPU count, clamped to [2, 8]: any less and the
+ * batch crawls on big-multi-trace catalogs, any more and the prewarmer's
+ * headless Chrome thrashes for no win — each prewarm is a real page load.
+ */
+function defaultBatchConcurrency(): number {
+  const cpus = Math.max(1, os.cpus().length);
+  return Math.max(2, Math.min(8, cpus));
+}
+
+/**
+ * Run `task` over every item with at most `limit` in flight at once.
+ * Returns the number of successful tasks; rejections are swallowed because
+ * the caller is the API layer, which surfaces them only as aggregate counts
+ * ("started=3", "scheduled=5"). Sized so two concurrent batch operations
+ * cannot starve each other — each worker pulls the next index atomically
+ * via the closure-captured cursor.
+ */
+async function runConcurrent<T>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<number> {
+  const cap = Math.max(1, Math.min(limit, items.length));
+  let cursor = 0;
+  let success = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      try {
+        await task(items[i] as T);
+        success++;
+      } catch {
+        // Best-effort: one bad trace must not abort its siblings.
+      }
+    }
+  };
+  await Promise.all(Array.from({length: cap}, worker));
+  return success;
+}
 /** How long the prewarm worker will wait for the trace_processor port to open. */
 const PREWARM_PORT_WAIT_MS = 30_000;
 
@@ -54,6 +98,8 @@ export class ProcessManager {
    */
   private readonly inFlight = new Map<string, Promise<Child>>();
   private readonly allocator: PortAllocator;
+  /** Workers in flight at once for startMany / prewarmMany. */
+  private readonly batchConcurrency: number;
 
   constructor(
     private readonly tpBinary: string,
@@ -62,8 +108,10 @@ export class ProcessManager {
     portBase: number,
     portCount: number,
     private readonly prewarmer: Prewarmer | undefined = undefined,
+    batchConcurrency: number = defaultBatchConcurrency(),
   ) {
     this.allocator = new PortAllocator(bind, portBase, portCount);
+    this.batchConcurrency = Math.max(1, Math.floor(batchConcurrency));
   }
 
   /**
@@ -74,6 +122,16 @@ export class ProcessManager {
    */
   async ensureChild(traceKey: string): Promise<void> {
     await this.ensureChildInternal(traceKey);
+  }
+
+  /**
+   * Start every key in `keys` in parallel, up to `batchConcurrency` in
+   * flight at once. Returns the number of successful starts; individual
+   * failures (invalid trace, OUT_OF_PORTS, …) are swallowed so one bad
+   * trace cannot abort its siblings.
+   */
+  startMany(keys: readonly string[]): Promise<number> {
+    return runConcurrent(keys, this.batchConcurrency, (k) => this.ensureChild(k));
   }
 
   private ensureChildInternal(traceKey: string): Promise<Child> {
@@ -164,18 +222,15 @@ export class ProcessManager {
     void this.runPrewarm(child);
   }
 
-  /** Schedules a prewarm for every key; rejected keys are silently skipped. */
-  async prewarmMany(keys: readonly string[]): Promise<number> {
-    let scheduled = 0;
-    for (const key of keys) {
-      try {
-        await this.ensurePrewarm(key);
-        scheduled++;
-      } catch {
-        // Best-effort; one bad trace must not abort the rest.
-      }
-    }
-    return scheduled;
+  /**
+   * Schedules a prewarm for every key in parallel, up to `batchConcurrency`
+   * in flight at once. The headless Chromium can load multiple ui.perfetto.dev
+   * tabs concurrently, so a parallel walk shortens batch latency by roughly
+   * a factor of `batchConcurrency` on a fast box. Failures are swallowed:
+   * one stuck prewarm must not block the rest.
+   */
+  prewarmMany(keys: readonly string[]): Promise<number> {
+    return runConcurrent(keys, this.batchConcurrency, (k) => this.ensurePrewarm(k));
   }
 
   /**

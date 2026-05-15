@@ -19,9 +19,13 @@ import {FilterChips, FilterControl} from './filter_bar';
 // directory / search / filters. Directories are listed first for navigation;
 // each trace row carries its live status and start/stop actions, with an
 // inline progress bar while an action is in flight.
-
-/** Cap on rendered trace rows — keeps the DOM light on very large catalogs. */
-const RENDER_CAP = 600;
+//
+// We render every row the server returns — no client-side cap. Off-screen
+// rows are skipped from layout + paint by the browser via the
+// `content-visibility: auto` rule in app.scss (see `.pf-tl-table tbody tr`).
+// This delivers virtual-scroll-grade performance for catalogs into the
+// thousands without the bookkeeping cost of a hand-rolled windowed
+// renderer.
 
 function range(n: number): readonly number[] {
   return Array.from({length: Math.max(0, n)}, (_, i) => i);
@@ -396,7 +400,6 @@ export class CatalogPanel implements m.ClassComponent {
     const columns = store
       .availableColumns()
       .filter((c) => store.columnIsVisible(c.id));
-    const rendered = traces.slice(0, RENDER_CAP);
     const hasRows = dirs.length > 0 || traces.length > 0;
 
     return m('section.pf-tl-panel', [
@@ -425,7 +428,7 @@ export class CatalogPanel implements m.ClassComponent {
                     columnCount: columns.length,
                   }),
                 ),
-                ...rendered.map((trace) =>
+                ...traces.map((trace) =>
                   m(TraceRow, {key: `trace:${trace.key}`, trace, columns}),
                 ),
               ]),
@@ -434,13 +437,6 @@ export class CatalogPanel implements m.ClassComponent {
         : state !== null
           ? this.empty()
           : null,
-      traces.length > rendered.length
-        ? m(
-            '.pf-tl-note',
-            `Showing ${rendered.length} of ${traces.length} matches — ` +
-              'refine the search or filters to narrow the list.',
-          )
-        : null,
     ]);
   }
 
@@ -469,6 +465,17 @@ export class CatalogPanel implements m.ClassComponent {
             'Preload ui.perfetto.dev against every trace in this view so ' +
             'opening them later is instant',
           onclick: () => void store.prewarmVisible(),
+        }),
+        m(Button, {
+          label: 'Open all shown',
+          icon: 'external',
+          variant: 'outlined',
+          compact: true,
+          disabled: store.visibleLiveCount() === 0,
+          title:
+            'Open every live trace in this view in its own ui.perfetto.dev ' +
+            'tab. Rows not yet started are skipped — start them first.',
+          onclick: () => store.openVisible(),
         }),
         m(Button, {
           label: 'Stop all shown',

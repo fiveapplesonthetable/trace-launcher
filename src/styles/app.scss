@@ -672,6 +672,17 @@ code {
 .pf-tl-tr {
   border-bottom: 1px solid var(--pf-color-border-secondary);
 
+  // Native off-screen culling: the browser skips layout + paint for rows
+  // not currently in the viewport, giving virtual-scroll-grade performance
+  // for catalogs into the thousands without a hand-rolled windowed
+  // renderer or scroll listener. `contain-intrinsic-size` advertises an
+  // assumed row height so the scrollbar geometry stays accurate before
+  // the rows render. Firefox falls back to normal rendering until they
+  // ship content-visibility broadly; that's still acceptable for tables
+  // up to a few thousand rows.
+  content-visibility: auto;
+  contain-intrinsic-size: 0 38px;
+
   &:last-child {
     border-bottom: none;
   }

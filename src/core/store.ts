@@ -244,6 +244,54 @@ class AppStore {
     return this.withPending(keys, () => api.prewarmBatch(keys));
   }
 
+  /** How many *visible* rows are currently live — i.e. have an openable
+   * ui.perfetto.dev deep link. Used to disable "Open all shown" when
+   * there is nothing to open. */
+  visibleLiveCount(): number {
+    const visible = new Set(this.visibleTraceKeys());
+    let n = 0;
+    for (const child of this.state?.running ?? []) {
+      if (visible.has(child.key) && child.status === 'live') n++;
+    }
+    return n;
+  }
+
+  /**
+   * Open every visible *live* trace in its own new browser tab — one
+   * ui.perfetto.dev deep link per row. Idle / starting / crashed rows
+   * are silently skipped: they have no bound port, so they have no URL
+   * to open. Returns the number of tabs opened so the caller can surface
+   * "nothing to open" without a popup-block fight.
+   *
+   * Browsers gate "open many tabs at once" on the call being part of a
+   * direct user gesture. The canonical idiom that survives the strictest
+   * popup blockers is a synthetic click on a temporary <a target="_blank">
+   * — more permissive than window.open() in a loop, since the browser
+   * treats it as link navigation rather than scripted popping. The anchor
+   * is hidden, attached, clicked, and removed within the same tick so it
+   * is never observable in the DOM.
+   */
+  openVisible(): number {
+    const visible = new Set(this.visibleTraceKeys());
+    const urls: string[] = [];
+    for (const child of this.state?.running ?? []) {
+      if (!visible.has(child.key)) continue;
+      if (child.status !== 'live') continue;
+      urls.push(child.perfettoUrl);
+    }
+    for (const url of urls) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    return urls.length;
+  }
+
   stopAll(): Promise<void> {
     const keys = (this.state?.running ?? []).map((c) => c.key);
     return this.withPending(keys, () => api.stopAll());

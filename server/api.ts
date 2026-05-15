@@ -121,17 +121,11 @@ export function createApiRouter(deps: ApiDeps) {
     res.json({ok: processes.stop(trace)});
   });
 
-  // Best-effort: start every trace in the list, ignoring individual failures.
+  // Best-effort: start every trace in the list in parallel, ignoring
+  // individual failures. Concurrency is bounded server-side to the
+  // configured worker count (defaults to nproc, capped at 8).
   router.post('/start-batch', async (req, res) => {
-    let started = 0;
-    for (const trace of readTraces(req.body)) {
-      try {
-        await processes.ensureChild(trace);
-        started++;
-      } catch {
-        // A batch start is best-effort; one bad trace must not abort the rest.
-      }
-    }
+    const started = await processes.startMany(readTraces(req.body));
     res.json({started});
   });
 

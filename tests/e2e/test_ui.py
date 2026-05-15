@@ -330,6 +330,40 @@ def run_scenarios(page: Page) -> None:
     page.locator('button[title="Switch to dark theme"]').click()
     page.wait_for_timeout(300)
 
+    # --- 11b. Open all shown spawns one tab per live row -------------------
+    # Counts new tabs created when "Open all shown" is clicked. To keep the
+    # test offline and fast, we block any navigation to ui.perfetto.dev at
+    # the context level — every open() still spawns a Page object that we
+    # observe via the 'page' event, but the underlying request is aborted
+    # so we never actually hit the network.
+    live_count = page.locator(".pf-tl-state--live").count()
+    context = page.context
+    opened_pages: list[Page] = []
+    on_new_page = lambda new: opened_pages.append(new)  # noqa: E731
+    context.on("page", on_new_page)
+    # Abort outbound nav to anything other than the local server so opens
+    # don't have to round-trip ui.perfetto.dev.
+    context.route(
+        "**/*",
+        lambda r: r.continue_() if r.request.url.startswith(BASE) else r.abort(),
+    )
+    page.get_by_role("button", name="Open all shown").click()
+    page.wait_for_timeout(700)
+    # Give the browser a moment to register the new pages, then stop
+    # listening so a later batch click in another scenario doesn't pollute.
+    context.remove_listener("page", on_new_page)
+    for tab in opened_pages:
+        try:
+            tab.close()
+        except Exception:  # noqa: BLE001 — already-closed tabs are fine
+            pass
+    context.unroute("**/*")
+    check(
+        "Open all shown opens one tab per live row",
+        len(opened_pages) == live_count and live_count > 0,
+        f"opened {len(opened_pages)} tab(s) for {live_count} live row(s)",
+    )
+
     # --- 12. stop all -------------------------------------------------------
     page.get_by_role("button", name="Stop all shown").click()
     page.wait_for_timeout(1500)

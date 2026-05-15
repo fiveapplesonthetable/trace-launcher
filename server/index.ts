@@ -94,6 +94,7 @@ function main(argv: readonly string[]): void {
     options.tpPortBase,
     options.tpPortCount,
     prewarmer,
+    options.batchConcurrency,
   );
 
   const config: ServerConfig = {
