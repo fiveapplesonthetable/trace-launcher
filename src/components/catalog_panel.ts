@@ -40,12 +40,16 @@ class Breadcrumb implements m.ClassComponent {
   view(): m.Children {
     const catalog = store.state?.catalog;
     if (catalog === undefined || catalog.selectedMode) return null;
+    // At root there are no segments — DirInfo already shows the
+    // absolute path on the next line. Rendering just `🏠 root` adds
+    // visual noise without telling the user anything new.
+    if (catalog.dir === '') return null;
 
-    const segments = catalog.dir === '' ? [] : catalog.dir.split('/');
+    const segments = catalog.dir.split('/');
     const crumbs: m.Child[] = [
       m(
         'button.pf-tl-crumb',
-        {disabled: catalog.dir === '', onclick: () => store.navigateTo('')},
+        {onclick: () => store.navigateTo('')},
         m(Icon, {icon: 'home', size: 14}),
         'root',
       ),

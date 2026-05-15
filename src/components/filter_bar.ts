@@ -270,8 +270,14 @@ export class SearchFilterBar implements m.ClassComponent {
   view(): m.Children {
     const recursive = store.state?.config.recursiveSearch ?? false;
     const cols = filterableColumns();
+    // The first entry is the "default" no-filter mode — typing into the
+    // bar drives store.query, a multi-token AND-substring match on the
+    // trace's path. Subsequent entries are real filterable columns and
+    // commit to chips when applied. Labelled "Search" so the pill at
+    // rest reads as "this is a search bar"; calling it "any field"
+    // would be a lie since metadata cells aren't scanned.
     const columnOptions = [
-      {value: FREE_TEXT_COLUMN_ID, label: 'Search (any field)'},
+      {value: FREE_TEXT_COLUMN_ID, label: 'Search'},
       ...cols.map((c) => ({value: c.id, label: c.label})),
     ];
     const free = isFreeText(this.editorColumn);
@@ -505,7 +511,12 @@ export class FilterChips implements m.ClassComponent {
                 {
                   type: 'button',
                   title: 'Remove filter',
-                  'aria-label': `Remove filter ${columnLabel(filter.column)} ${filter.op} ${filter.value}`,
+                  // Use the verbose op label so a screen reader reads
+                  // "Remove filter Status equals live", not "Status equals
+                  // live" with the raw id.
+                  'aria-label':
+                    `Remove filter: ${columnLabel(filter.column)} ` +
+                    `${OP_LABELS[filter.op].toLowerCase()} ${filter.value}`,
                   onclick: () => store.removeFilter(index),
                 },
                 m(Icon, {icon: 'close', size: 12}),
