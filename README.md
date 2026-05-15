@@ -361,24 +361,40 @@ npm run check        # typecheck + test + build
 npm run seed         # rebuild fixtures/metadata.db
 ```
 
-### End-to-end UI test
+### End-to-end UI tests
 
-`tests/e2e/test_ui.py` boots the real server against the fixtures, drives a
-headed Chrome via Playwright, and asserts against the DOM. It covers the start
-→ live path, the prewarm flow, a crashing trace_processor, a hanging one,
-double-click idempotency, the column picker, a metadata SQL filter, directory
-navigation, the theme toggle, and a second server with a 2-port pool that
-exercises the out-of-ports inline error and its dismissal. 19/19 checkpoints,
-~30 seconds.
+There are two complementary end-to-end suites under `tests/e2e/`, both
+boot the real server against the bundled fixtures and drive a headed
+Chrome via Playwright.
+
+**`tests/e2e/test_ui.py`** — deterministic golden path. Covers the
+start → live path, prewarm flow, a crashing trace_processor, a hanging
+one, double-click idempotency, the column picker, a metadata SQL
+filter, directory navigation, the theme toggle, and a second server
+with a 2-port pool that exercises the out-of-ports inline error and
+its dismissal. 19/19 checkpoints, ~30 seconds.
+
+**`tests/e2e/test_chaos.py`** — property-style chaos. Random
+Start/Stop/Prewarm bursts across many rows, ten rapid Start clicks on
+one row (regression guard for the in-flight dedup), out-of-band kills
+with SIGKILL / SIGSEGV / SIGTERM that must surface the right chip
+label, a kill mid-prewarm, a hard browser reload mid-life, and a
+small-pool exhaustion + recovery cycle. 21/21 checkpoints, ~50
+seconds. Kill scenarios use `os.kill` against the positive child pid
+with three layered safety guards (pid ≥ 1000, not the test runner's
+ancestor chain, `/proc/<pid>/comm` in an allowlist) so a stale or
+zero pid can never escalate into the catastrophic `kill -<sig> -1`
+process-group form.
 
 ```sh
 python3 -m venv .e2e-venv && .e2e-venv/bin/pip install playwright \
   && .e2e-venv/bin/playwright install chromium
 npm run build
-TL_E2E_HEADLESS=1 .e2e-venv/bin/python tests/e2e/test_ui.py
+TL_E2E_HEADLESS=1 .e2e-venv/bin/python tests/e2e/test_ui.py     # deterministic
+TL_E2E_HEADLESS=1 .e2e-venv/bin/python tests/e2e/test_chaos.py  # chaos
 ```
 
-Drop `TL_E2E_HEADLESS=1` to run it headed under a recorder.
+Drop `TL_E2E_HEADLESS=1` to run either headed under a recorder.
 
 ## Architecture
 
