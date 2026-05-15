@@ -280,16 +280,14 @@ class TraceRow
         ? formatSize(child.rssBytes)
         : null;
     return m('.pf-tl-status-cell', [
-      m('.pf-tl-status-cell__row', [
-        this.chip(child),
-        rssText !== null
-          ? m(
-              'span.pf-tl-status-cell__rss',
-              {title: 'Resident set size for this trace_processor'},
-              rssText,
-            )
-          : null,
-      ]),
+      this.chip(child),
+      rssText !== null
+        ? m(
+            'span.pf-tl-status-cell__rss',
+            {title: 'Resident set size for this trace_processor'},
+            rssText,
+          )
+        : null,
       actionError !== undefined
         ? m(
             '.pf-tl-row-error',

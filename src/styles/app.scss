@@ -767,20 +767,25 @@ code {
 }
 
 // When the row is live, the basename links straight to ui.perfetto.dev
-// wired to its RPC port. Styled to read as a link without distracting from
-// the basename itself: subtle accent hue + hover underline + focus ring.
+// wired to its RPC port. Reads as a link at rest (accent color +
+// underline) so the affordance is visible without hovering. Hover and
+// focus deepen the cue with a fuller underline + focus ring.
 .pf-tl-name-cell__link {
   display: inline-flex;
   min-width: 0;
   text-decoration: none;
-  color: inherit;
   border-radius: 2px;
+
+  .pf-tl-name-cell__text {
+    color: var(--pf-color-accent);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--pf-color-accent) 45%, transparent);
+    text-underline-offset: 2px;
+  }
 
   &:hover .pf-tl-name-cell__text,
   &:focus-visible .pf-tl-name-cell__text {
-    color: var(--pf-color-accent);
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    text-decoration-color: var(--pf-color-accent);
   }
 
   &:focus-visible {
@@ -825,21 +830,18 @@ code {
   gap: 4px;
 }
 
-// Chip + per-trace RSS share the top line so the two readings sit beside
-// each other instead of stacking and bloating the row.
-.pf-tl-status-cell__row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
+// RSS readout for the running child sits on its own line directly under
+// the chip — same column, second row — so the operator sees "what state"
+// and "how heavy" stacked without the chip widening unpredictably for
+// different size strings.
 .pf-tl-status-cell__rss {
+  align-self: flex-start;
   font-size: 10.5px;
   color: var(--pf-color-text-muted);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
+  padding-left: 2px;
 }
 
 .pf-tl-status-cell__progress {
