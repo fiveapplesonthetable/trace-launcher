@@ -107,6 +107,7 @@ class ChildRow implements m.ClassComponent<{child: RunningChild}> {
         label: 'Open',
         icon: 'external',
         intent: 'primary',
+        variant: 'outlined',
         compact: true,
         disabled: !live,
         href: live ? child.perfettoUrl : undefined,

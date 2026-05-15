@@ -233,6 +233,7 @@ class TraceRow
         label: 'Start',
         icon: 'play',
         intent: 'success',
+        variant: 'outlined',
         compact: true,
         loading: pending,
         onclick: () => void store.open(trace.key),

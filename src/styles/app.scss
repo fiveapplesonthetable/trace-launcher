@@ -50,7 +50,6 @@ code {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--pf-color-border);
-  border-radius: 99px;
   border: 3px solid var(--pf-color-void);
 }
 ::-webkit-scrollbar-track {
@@ -267,7 +266,7 @@ code {
 .tl-panel {
   background: var(--pf-color-background);
   border: 1px solid var(--pf-color-border);
-  border-radius: var(--tl-radius-lg);
+  border-radius: var(--tl-radius);
   box-shadow: var(--tl-shadow-1);
   overflow: hidden;
 }
@@ -295,13 +294,15 @@ code {
 }
 
 .tl-badge {
-  min-width: 20px;
-  padding: 1px 7px;
-  border-radius: 99px;
-  background: var(--pf-color-background-tertiary);
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: var(--tl-radius-sm);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor, transparent 75%);
   color: var(--pf-color-text-muted);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1.3;
   text-align: center;
 }
 
@@ -471,12 +472,14 @@ code {
 }
 
 .tl-chip {
-  padding: 1px 7px;
-  border-radius: 4px;
-  background: var(--pf-color-background-tertiary);
+  padding: 1px 5px;
+  border-radius: var(--tl-radius-sm);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor, transparent 70%);
   color: var(--pf-color-text-muted);
   font-family: var(--tl-mono);
   font-size: 11px;
+  line-height: 1.3;
   flex-shrink: 0;
 }
 
@@ -547,12 +550,14 @@ code {
 .tl-chip-filter {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 4px 3px 9px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--pf-color-accent) 14%, var(--pf-color-background));
-  border: 1px solid color-mix(in srgb, var(--pf-color-accent) 35%, transparent);
+  gap: 6px;
+  padding: 2px 4px 2px 7px;
+  border-radius: var(--tl-radius-sm);
+  color: var(--pf-color-accent);
+  background: color-mix(in srgb, var(--pf-color-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pf-color-accent), transparent 60%);
   font-size: 11.5px;
+  line-height: 1.3;
 
   strong {
     font-weight: 600;
@@ -562,11 +567,11 @@ code {
 .tl-chip-filter__remove {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--tl-radius-sm);
   background: transparent;
   color: var(--pf-color-text-muted);
   cursor: pointer;
@@ -896,28 +901,27 @@ code {
 
 .tl-state {
   align-self: flex-start;
-  padding: 2px 8px;
-  border-radius: 99px;
+  padding: 1px 5px;
+  border-radius: var(--tl-radius-sm);
+  border: 1px solid color-mix(in srgb, currentColor, transparent 60%);
+  background: color-mix(in srgb, currentColor 12%, transparent);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  line-height: 1.3;
 
   &--idle {
     color: var(--pf-color-text-muted);
-    background: var(--pf-color-background-tertiary);
   }
   &--live {
     color: var(--pf-color-success);
-    background: color-mix(in srgb, var(--pf-color-success) 16%, transparent);
   }
   &--starting {
     color: var(--pf-color-warning);
-    background: color-mix(in srgb, var(--pf-color-warning) 16%, transparent);
   }
   &--crashed {
     color: var(--pf-color-danger);
-    background: color-mix(in srgb, var(--pf-color-danger) 16%, transparent);
   }
 }
 
@@ -930,49 +934,49 @@ code {
 // --- buttons -----------------------------------------------------------------
 
 .tl-button {
-  --_bg: var(--pf-color-background-tertiary);
+  --_bg: color-mix(in srgb, transparent, currentColor 8%);
   --_fg: var(--pf-color-text);
   --_bd: transparent;
 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 13px;
+  gap: 5px;
+  padding: 4px 8px;
+  min-height: 24px;
   border: 1px solid var(--_bd);
   border-radius: var(--tl-radius-sm);
   background: var(--_bg);
   color: var(--_fg);
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   transition:
     background var(--tl-transition),
     border-color var(--tl-transition),
-    transform var(--tl-transition),
     opacity var(--tl-transition);
 
   &:hover {
-    background: color-mix(in srgb, var(--_bg), var(--_fg) 12%);
+    background: color-mix(in srgb, var(--_bg), var(--_fg) 10%);
   }
   &:active {
-    transform: translateY(1px);
+    background: color-mix(in srgb, var(--_bg), var(--_fg) 18%);
   }
 
   &--compact {
-    height: 27px;
-    padding: 0 9px;
+    padding: 2px 6px;
+    min-height: 22px;
     font-size: 11.5px;
+    gap: 4px;
   }
   &--icon-only {
-    padding: 0;
-    width: 32px;
+    padding: 4px;
   }
   &--compact.tl-button--icon-only {
-    width: 27px;
+    padding: 3px;
   }
 
   &--primary {
@@ -1071,7 +1075,7 @@ code {
 .tl-progress {
   position: relative;
   height: 4px;
-  border-radius: 99px;
+  border-radius: var(--tl-radius-sm);
   background: var(--pf-color-background-tertiary);
   overflow: hidden;
 }
