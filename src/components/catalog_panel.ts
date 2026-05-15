@@ -144,7 +144,8 @@ class DirRow
           ]),
         ),
         ...range(columnCount).map(() => m('td.pf-tl-td.pf-tl-td--dim', '—')),
-        m('td.pf-tl-td.pf-tl-td--dim', ''),
+        m('td.pf-tl-td.pf-tl-td--dim', '—'), // memory placeholder
+        m('td.pf-tl-td.pf-tl-td--dim', ''),  // status placeholder
       ],
     );
   }
@@ -220,6 +221,7 @@ class TraceRow
         ]),
       ),
       ...columns.map((col) => m('td.pf-tl-td', this.cell(trace, col))),
+      m('td.pf-tl-td.pf-tl-td--memory', this.memoryCell(child)),
       m('td.pf-tl-td.pf-tl-td--status', this.statusCell(trace, child, busy)),
     ]);
   }
@@ -257,37 +259,13 @@ class TraceRow
     child: RunningChild | undefined,
     busy: boolean,
   ): m.Children {
-    // Two sources of an inline error chip:
-    //   - an action error (Start / Prewarm / Stop) the API returned, owned
-    //     by the client store and dismissable.
-    //   - a prewarm task failure pulled from the server snapshot. Not
-    //     dismissable from the UI — the message disappears on the next
-    //     successful prewarm or once the row is stopped — but it is
-    //     surfaced visibly so the user knows "the bolt click did
-    //     something, and that something failed" rather than silently
-    //     flipping back to the live chip.
+    // The status cell stays single-line. A failed prewarm puts its reason
+    // in the chip's `title` tooltip (see `chip()`); a Start/Stop API
+    // error surfaces as a compact inline chip beside the state chip with
+    // the full message in `title`, *not* on a second line.
     const actionError = store.errorFor(trace.key);
-    const prewarmFailedMessage =
-      actionError === undefined && child?.prewarm === 'prewarm-failed'
-        ? `Prewarm failed: ${child.prewarmError ?? 'unknown reason'}. ` +
-          'Click the bolt button to retry.'
-        : null;
-    // RSS for the running child, when meaningful: zero or missing values
-    // (idle row, crashed child) are hidden so the chip doesn't acquire a
-    // useless "0 B" suffix.
-    const rssText =
-      child !== undefined && child.status !== 'crashed' && child.rssBytes > 0
-        ? formatSize(child.rssBytes)
-        : null;
     return m('.pf-tl-status-cell', [
       this.chip(child),
-      rssText !== null
-        ? m(
-            'span.pf-tl-status-cell__rss',
-            {title: 'Resident set size for this trace_processor'},
-            rssText,
-          )
-        : null,
       actionError !== undefined
         ? m(
             '.pf-tl-row-error',
@@ -298,7 +276,6 @@ class TraceRow
             },
             [
               m(Icon, {icon: 'alert', size: 12}),
-              m('span.pf-tl-row-error__text', actionError.message),
               m(
                 'button.pf-tl-row-error__close',
                 {
@@ -310,22 +287,25 @@ class TraceRow
               ),
             ],
           )
-        : prewarmFailedMessage !== null
-          ? m(
-              '.pf-tl-row-error.pf-tl-row-error--prewarm',
-              {
-                title: prewarmFailedMessage,
-                role: 'alert',
-                'aria-live': 'polite',
-              },
-              [
-                m(Icon, {icon: 'alert', size: 12}),
-                m('span.pf-tl-row-error__text', prewarmFailedMessage),
-              ],
-            )
-          : null,
+        : null,
       busy ? m(ProgressBar, {className: 'pf-tl-status-cell__progress'}) : null,
     ]);
+  }
+
+  /** Memory cell: the running child's RSS, or em-dash if idle / crashed. */
+  private memoryCell(child: RunningChild | undefined): m.Children {
+    if (
+      child === undefined ||
+      child.status === 'crashed' ||
+      child.rssBytes <= 0
+    ) {
+      return m('span.pf-tl-cell-dim', '—');
+    }
+    return m(
+      'span.pf-tl-cell-num',
+      {title: 'Resident set size for this trace_processor'},
+      formatSize(child.rssBytes),
+    );
   }
 
   private chip(child: RunningChild | undefined): m.Children {
@@ -636,6 +616,7 @@ export class CatalogPanel implements m.ClassComponent {
         m('th.pf-tl-th.pf-tl-th--actions', {'aria-label': 'Actions'}, ''),
         sortHeader('name', 'Name'),
         ...columns.map((col) => sortHeader(col.id, col.label)),
+        m('th.pf-tl-th.pf-tl-th--memory', 'Memory'),
         m('th.pf-tl-th', 'Status'),
       ]),
     );

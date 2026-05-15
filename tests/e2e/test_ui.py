@@ -415,12 +415,17 @@ def run_max_ports_scenario(page: Page) -> None:
         f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{third_name}"]) .pf-tl-row-error',
         timeout=8_000,
     )
-    text = third.locator(".pf-tl-row-error__text").inner_text().strip().lower()
+    # The full error message lives in the `title` tooltip now (the chip
+    # itself is icon + dismiss so it fits beside the state chip on a single
+    # row line). Reading the attribute is the stable way to assert on
+    # message contents without relying on visual text.
+    tooltip = third.locator(".pf-tl-row-error").get_attribute("title") or ""
+    text = tooltip.strip().lower()
     check(
         "out-of-ports surfaces an inline row error with a stop-a-trace hint",
         third.locator(".pf-tl-row-error").count() == 1
         and ("stop a running trace" in text or "free" in text),
-        f"row-error text: {text!r}",
+        f"row-error tooltip: {text!r}",
     )
     shot(page, "max-ports-error")
 

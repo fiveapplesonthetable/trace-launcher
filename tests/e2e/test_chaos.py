@@ -676,13 +676,18 @@ def scenario_port_exhaustion_churn(page: Page) -> None:
     )
     error_text = ""
     if appeared:
-        error_text = trace_row(page, overflow_target).locator(
-            ".pf-tl-row-error__text"
-        ).inner_text().strip()
+        # Message is on the host element's `title` (tooltip) since the
+        # chip is now icon + dismiss only.
+        error_text = (
+            trace_row(page, overflow_target)
+            .locator(".pf-tl-row-error")
+            .get_attribute("title")
+            or ""
+        ).strip()
     check(
         "overflow Start surfaces OUT_OF_PORTS as an inline row error",
         appeared and "port" in error_text.lower(),
-        f"error text: {error_text!r}",
+        f"error tooltip: {error_text!r}",
     )
     shot(page, "out-of-ports")
 

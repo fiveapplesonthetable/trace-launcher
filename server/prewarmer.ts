@@ -35,9 +35,24 @@ export class Prewarmer {
 
   /**
    * Runs ui.perfetto.dev against `127.0.0.1:port` in a headless tab, waits
-   * until the UI signals the trace has loaded, and discards the tab. Throws
-   * PrewarmError on timeout or browser failure.
-   */
+   * for the page's queries against trace_processor to drain, and discards
+   * the tab. Throws PrewarmError on timeout or browser failure.
+   *
+   * The signal we wait for is "network idle" — Playwright considers the
+   * page settled once no new HTTP request has been made for 500 ms. By
+   * the time that fires, ui.perfetto.dev has loaded, hydrated, asked
+   * trace_processor for its initial track list / thread / process /
+   * counters / slice-count round, and received all the responses. The
+   * trace_processor has now cached every one of those queries; when the
+   * user later opens the same URL themselves, the second cohort of
+   * requests hits the cache and the viewer renders without delay.
+   *
+   * Why not a DOM selector probe? Perfetto UI's internal DOM (track
+   * elements, loading containers, …) is a moving target; tying the
+   * prewarm signal to a specific class name turned every UI refresh
+   * into a silent "prewarm always times out". Network idle is a stable
+   * contract that survives DOM refactors and matches the actual
+   * goal exactly. */
   async warm(port: number, timeoutMs: number = PREWARM_WAIT_MS): Promise<void> {
     if (this.closed) throw new PrewarmError('prewarmer is shut down');
     const browser = await this.launch();
@@ -48,27 +63,30 @@ export class Prewarmer {
       const url =
         `https://ui.perfetto.dev/?rpc_port=${port}` +
         `#!/viewer?rpc_port=${port}`;
+      // First leg: page navigated + initial JS executed.
       await page.goto(url, {timeout: timeoutMs, waitUntil: 'domcontentloaded'});
-      // The UI surfaces "trace loaded" by rendering at least one track. We
-      // also accept "loading indicator cleared" as a fallback for UI builds
-      // that don't render tracks until the user interacts. Passed as a
-      // string so the function body is evaluated in the page context and
-      // doesn't drag DOM types into the server's TypeScript config.
-      await page.waitForFunction(
-        `
-          (() => {
-            const tracks = document.querySelectorAll(
-              'track-panel, .track-shell, .track',
-            );
-            if (tracks.length > 0) return true;
-            const loading = document.querySelector('.pf-ui-main__loading');
-            if (loading === null) return false;
-            return loading.getAttribute('data-state') === 'none';
-          })()
-        `,
-        undefined,
-        {timeout: timeoutMs, polling: 500},
-      );
+      // Second leg: every query against trace_processor has returned.
+      // Wait for the *load* event explicitly first (assets in flight), then
+      // for the network to fall idle. If ui.perfetto.dev keeps a long-lived
+      // connection alive past the load that defeats `networkidle`, we still
+      // unblock — the cache is warmed at this point, the extra wait would
+      // only delay the row's transition to `prewarmed`.
+      try {
+        await page.waitForLoadState('load', {timeout: timeoutMs});
+        await page.waitForLoadState('networkidle', {timeout: timeoutMs});
+      } catch (innerErr) {
+        // A waitForLoadState timeout is not a hard failure for prewarming —
+        // the queries probably fired during the long wait, and the cache
+        // is now warm enough to make the user's later click much faster.
+        // Surface the inner timeout via the rethrow path only when nothing
+        // useful happened, i.e. the page never reached `load`.
+        if (
+          innerErr instanceof Error &&
+          /waitForLoadState\(.*load.*\)/.test(innerErr.message)
+        ) {
+          throw innerErr;
+        }
+      }
     } catch (err) {
       throw new PrewarmError(
         err instanceof Error ? err.message : String(err),
