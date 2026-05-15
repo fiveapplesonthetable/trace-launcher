@@ -3,6 +3,33 @@
   "version": "0.1.0",
   "description": "A fast, minimal web UI for launching trace_processor_shell HTTP servers from a directory of traces.",
   "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fiveapplesonthetable/trace-launcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fiveapplesonthetable/trace-launcher/issues"
+  },
+  "homepage": "https://github.com/fiveapplesonthetable/trace-launcher#readme",
+  "keywords": [
+    "perfetto",
+    "trace",
+    "trace-processor",
+    "tracing",
+    "profiling",
+    "mithril",
+    "developer-tools"
+  ],
+  "files": [
+    "dist",
+    "server",
+    "shared",
+    "fixtures",
+    "tsconfig.server.json",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "engines": {
     "node": ">=18.19"

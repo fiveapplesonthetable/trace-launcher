@@ -1,4 +1,30 @@
 node_modules/
 dist/
 *.log
+*.tsbuildinfo
+
+# Build / cache
+.vite/
+.parcel-cache/
+coverage/
+
+# E2E
+.e2e-venv/
+/tmp-screenshots*/
+__pycache__/
+*.pyc
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+.env.*.local
