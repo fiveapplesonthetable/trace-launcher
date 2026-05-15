@@ -376,7 +376,9 @@ class AppStore {
     window.clearTimeout(this.pollTimer);
     const settling =
       this.pending.size > 0 ||
-      (this.state?.running ?? []).some((c) => c.status === 'starting');
+      (this.state?.running ?? []).some(
+        (c) => c.status === 'starting' || c.prewarm === 'prewarming',
+      );
     const delay = settling ? ACTIVE_POLL_MS : IDLE_POLL_MS;
     this.pollTimer = window.setTimeout(() => void this.refresh(), delay);
   }
