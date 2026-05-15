@@ -51,6 +51,10 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
 
     const inert = disabled || loading;
     const iconSize = compact ? 14 : 16;
+    // Icon-only buttons need an accessible name; title alone is unreliable
+    // across screen readers and automation tooling, so we mirror it as
+    // aria-label whenever there is no visible label.
+    const ariaLabel = label === undefined ? title : undefined;
     const classes = classNames(
       'tl-button',
       `tl-button--${variant}`,
@@ -81,6 +85,7 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
           target,
           rel: target === '_blank' ? 'noopener noreferrer' : undefined,
           title,
+          'aria-label': ariaLabel,
         },
         body,
       );
@@ -92,6 +97,7 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
         type: 'button',
         disabled: inert,
         title,
+        'aria-label': ariaLabel,
         onclick: inert ? undefined : onclick,
       },
       body,

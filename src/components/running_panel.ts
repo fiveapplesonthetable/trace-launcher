@@ -33,6 +33,7 @@ class ChildRow implements m.ClassComponent<{child: RunningChild}> {
     const busy = pending || child.status === 'starting';
 
     return m(`.tl-rrow.tl-rrow--${child.status}`, [
+      m('.tl-rrow__actions', this.actions(child, pending)),
       m(`span.tl-dot.tl-dot--${child.status}`),
       m(MiddleEllipsis, {
         text: child.name,
@@ -43,7 +44,6 @@ class ChildRow implements m.ClassComponent<{child: RunningChild}> {
         ? m('code.tl-chip', `:${child.port}`)
         : null,
       m('.tl-rrow__metrics', this.metrics(child)),
-      m('.tl-rrow__actions', this.actions(child, pending)),
       busy ? m(ProgressBar, {className: 'tl-rrow__progress'}) : null,
     ]);
   }
@@ -82,21 +82,25 @@ class ChildRow implements m.ClassComponent<{child: RunningChild}> {
   }
 
   private actions(child: RunningChild, pending: boolean): m.Children {
+    // Two icon-only buttons per row, sitting in a fixed-width slot on the
+    // left so they never shift between rows. Titles give every button an
+    // accessible name without changing the visual width.
     if (child.status === 'crashed') {
       return [
         m(Button, {
-          label: 'Retry',
           icon: 'refresh',
           intent: 'primary',
+          variant: 'outlined',
           compact: true,
+          title: 'Retry',
           loading: pending,
           onclick: () => void store.open(child.key),
         }),
         m(Button, {
-          label: 'Dismiss',
           icon: 'close',
           variant: 'minimal',
           compact: true,
+          title: 'Dismiss',
           onclick: () => void store.stop(child.key),
         }),
       ];
@@ -104,11 +108,11 @@ class ChildRow implements m.ClassComponent<{child: RunningChild}> {
     const live = child.status === 'live';
     return [
       m(Button, {
-        label: 'Open',
         icon: 'external',
         intent: 'primary',
         variant: 'outlined',
         compact: true,
+        title: 'Open in Perfetto',
         disabled: !live,
         href: live ? child.perfettoUrl : undefined,
         target: '_blank',
@@ -116,7 +120,7 @@ class ChildRow implements m.ClassComponent<{child: RunningChild}> {
       m(Button, {
         icon: 'stop',
         intent: 'danger',
-        variant: 'minimal',
+        variant: 'outlined',
         compact: true,
         title: live ? 'Stop' : 'Cancel',
         loading: pending,

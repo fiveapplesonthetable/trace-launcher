@@ -426,10 +426,14 @@ code {
   }
 }
 
+// Fixed-width slot keeps icon buttons aligned vertically across rows even
+// when a row has only one (e.g. a child still 'starting' with just Cancel).
 .tl-rrow__actions {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+  width: 60px;
+  justify-content: flex-start;
 }
 
 .tl-rrow__progress {
@@ -789,7 +793,9 @@ code {
   }
 
   &--actions {
-    width: 1px;
+    width: 44px;
+    padding-left: 14px;
+    padding-right: 0;
   }
 }
 
@@ -841,9 +847,10 @@ code {
     width: 130px;
   }
   &--actions {
-    width: 1px;
+    width: 44px;
+    padding: 7px 0 7px 14px;
     white-space: nowrap;
-    text-align: right;
+    text-align: left;
   }
 }
 

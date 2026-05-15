@@ -115,6 +115,10 @@ class DirRow
       },
       [
         m(
+          'td.tl-td.tl-td--actions',
+          m(Icon, {icon: 'chevronRight', size: 16, className: 'tl-chevron'}),
+        ),
+        m(
           'td.tl-td.tl-td--name',
           m('.tl-name-cell', [
             m(
@@ -126,10 +130,6 @@ class DirRow
         ),
         ...range(columnCount).map(() => m('td.tl-td.tl-td--dim', '—')),
         m('td.tl-td.tl-td--dim', ''),
-        m(
-          'td.tl-td.tl-td--actions',
-          m(Icon, {icon: 'chevronRight', size: 16, className: 'tl-chevron'}),
-        ),
       ],
     );
   }
@@ -151,6 +151,7 @@ class TraceRow
     const busy = pending || child?.status === 'starting';
 
     return m(`tr.tl-tr.tl-tr--trace${busy ? '.tl-tr--busy' : ''}`, [
+      m('td.tl-td.tl-td--actions', this.action(trace, child, pending)),
       m(
         'td.tl-td.tl-td--name',
         m('.tl-name-cell', [
@@ -164,10 +165,6 @@ class TraceRow
       ),
       ...columns.map((col) => m('td.tl-td', this.cell(trace, col))),
       m('td.tl-td.tl-td--status', this.statusCell(child, busy)),
-      m(
-        'td.tl-td.tl-td--actions',
-        this.actions(trace, child, pending),
-      ),
     ]);
   }
 
@@ -223,43 +220,57 @@ class TraceRow
     }
   }
 
-  private actions(
+  private action(
     trace: TraceEntry,
     child: RunningChild | undefined,
     pending: boolean,
   ): m.Children {
-    if (child === undefined || child.status === 'crashed') {
+    // Each row carries one icon-only action, fixed-width-aligned, in the
+    // leading column. The mapping is: idle/crashed -> start (or retry);
+    // live -> open in Perfetto; starting -> cancel. Stopping a live child
+    // happens from the dense Running panel above the catalog.
+    if (child === undefined) {
       return m(Button, {
-        label: 'Start',
         icon: 'play',
         intent: 'success',
         variant: 'outlined',
         compact: true,
+        title: 'Start',
         loading: pending,
         onclick: () => void store.open(trace.key),
       });
     }
-    const live = child.status === 'live';
-    return m('.tl-action-pair', [
-      m(Button, {
-        label: 'Open',
+    if (child.status === 'crashed') {
+      return m(Button, {
+        icon: 'refresh',
+        intent: 'primary',
+        variant: 'outlined',
+        compact: true,
+        title: 'Retry',
+        loading: pending,
+        onclick: () => void store.open(trace.key),
+      });
+    }
+    if (child.status === 'live') {
+      return m(Button, {
         icon: 'external',
         intent: 'primary',
+        variant: 'outlined',
         compact: true,
-        disabled: !live,
-        href: live ? child.perfettoUrl : undefined,
+        title: 'Open in Perfetto',
+        href: child.perfettoUrl,
         target: '_blank',
-      }),
-      m(Button, {
-        icon: 'stop',
-        intent: 'danger',
-        variant: 'minimal',
-        compact: true,
-        title: live ? 'Stop' : 'Cancel',
-        loading: pending,
-        onclick: () => void store.stop(trace.key),
-      }),
-    ]);
+      });
+    }
+    return m(Button, {
+      icon: 'stop',
+      intent: 'danger',
+      variant: 'outlined',
+      compact: true,
+      title: 'Cancel',
+      loading: pending,
+      onclick: () => void store.stop(trace.key),
+    });
   }
 }
 
@@ -393,10 +404,10 @@ export class CatalogPanel implements m.ClassComponent {
     return m(
       'thead',
       m('tr', [
+        m('th.tl-th.tl-th--actions', ''),
         sortHeader('name', 'Name'),
         ...columns.map((col) => sortHeader(col.id, col.label)),
         m('th.tl-th', 'Status'),
-        m('th.tl-th.tl-th--actions', ''),
       ]),
     );
   }

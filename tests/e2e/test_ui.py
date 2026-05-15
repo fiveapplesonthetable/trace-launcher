@@ -179,15 +179,17 @@ def run_scenarios(page: Page) -> None:
     shot(page, "hang")
 
     # --- 7. double-clicking Start is idempotent ----------------------------
-    sched = trace_row(page, "scheduler.trace")
-    sched_start = sched.get_by_role("button", name="Start")
-    sched_start.click()
-    # Second click as fast as possible; the button may already be a spinner.
-    try:
-        sched_start.click(timeout=600)
-    except Exception:
-        pass  # button became inert — exactly the protection we want
-    page.wait_for_timeout(2500)
+    sched_btn = trace_row(page, "scheduler.trace").locator(
+        ".tl-td--actions button"
+    ).first
+    # dispatch_event bypasses Playwright's actionability checks and goes
+    # straight to the button's onclick handler, so we can fire two presses
+    # back-to-back without racing the inert-on-pending guard. That's exactly
+    # what we want here: prove the server stays idempotent even when both
+    # synthetic clicks land before the UI has marked the button busy.
+    sched_btn.dispatch_event("click")
+    sched_btn.dispatch_event("click")
+    page.wait_for_timeout(3000)
     sched_children = page.locator(
         '.tl-rrow:has(.tl-rrow__name[title="scheduler.trace"])'
     ).count()
@@ -226,6 +228,30 @@ def run_scenarios(page: Page) -> None:
         f"{filtered} row(s) match device~pixel-9",
     )
     shot(page, "filter")
+
+    # --- 9b. "Start all shown" respects the active filter -------------------
+    # The filter scoped the catalog to two traces; only those should land in
+    # Running. (slow-hang is already running from test 6, so the count goes
+    # up by exactly one — chrome-startup.)
+    running_before = page.locator(".tl-rrow").count()
+    page.get_by_role("button", name="Start all shown").click()
+    page.wait_for_selector(
+        '.tl-rrow:has(.tl-rrow__name[title="chrome-startup.perfetto-trace"])',
+        timeout=12_000,
+    )
+    page.wait_for_timeout(800)
+    running_after = page.locator(".tl-rrow").count()
+    check(
+        "Start all shown only spawns traces in the filtered view",
+        running_after == running_before + 1
+        and page.locator(
+            '.tl-rrow:has(.tl-rrow__name[title="chrome-startup.perfetto-trace"])'
+        ).count()
+        == 1,
+        f"running rows: {running_before} -> {running_after}",
+    )
+    shot(page, "bulk-filtered")
+
     # remove the filter again
     page.locator(".tl-chip-filter__remove").first.click()
     page.wait_for_timeout(700)
