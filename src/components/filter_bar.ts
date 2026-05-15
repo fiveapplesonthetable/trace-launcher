@@ -1,5 +1,5 @@
 import m from 'mithril';
-import type {CatalogColumn, ColumnKind, FilterOp} from '../../shared/types';
+import type {CatalogColumn, FilterOp} from '../../shared/types';
 import {store} from '../core/store';
 import {Button} from '../widgets/button';
 import {Dropdown} from '../widgets/dropdown';
@@ -21,14 +21,37 @@ const OP_LABELS: Readonly<Record<FilterOp, string>> = {
 };
 const TEXT_OPS: readonly FilterOp[] = ['contains', 'equals'];
 const NUMBER_OPS: readonly FilterOp[] = ['equals', 'gte', 'lte', 'gt', 'lt'];
+const STATUS_OPS: readonly FilterOp[] = ['equals'];
 const SUGGEST_DEBOUNCE_MS = 140;
 const SUGGESTIONS_LIST_ID = 'tl-filter-suggestions';
 
-function opsFor(kind: ColumnKind): readonly FilterOp[] {
-  return kind === 'number' ? NUMBER_OPS : TEXT_OPS;
+/**
+ * Synthetic column for filtering by runtime state. Not part of the server's
+ * config.columns — the actual filtering happens client-side in the store
+ * against each trace's live RunningChild status. Listed first so it's the
+ * default the editor lands on, which is the most common reason to filter.
+ */
+const STATUS_COLUMN: CatalogColumn = {
+  id: 'status',
+  label: 'Status',
+  kind: 'text',
+  source: 'file',
+  filterable: true,
+  defaultVisible: false,
+};
+const STATUS_VALUES: readonly string[] = ['idle', 'live', 'starting', 'crashed'];
+
+function opsFor(column: CatalogColumn): readonly FilterOp[] {
+  if (column.id === 'status') return STATUS_OPS;
+  return column.kind === 'number' ? NUMBER_OPS : TEXT_OPS;
+}
+
+function filterableColumns(): readonly CatalogColumn[] {
+  return [STATUS_COLUMN, ...store.availableColumns().filter((c) => c.filterable)];
 }
 
 function columnLabel(id: string): string {
+  if (id === STATUS_COLUMN.id) return STATUS_COLUMN.label;
   return store.availableColumns().find((c) => c.id === id)?.label ?? id;
 }
 
@@ -41,17 +64,15 @@ class FilterEditor implements m.ClassComponent {
   private suggestTimer: number | undefined;
 
   view(): m.Children {
-    const filterable = store.availableColumns().filter((c) => c.filterable);
-    if (filterable.length === 0) {
-      return m('.tl-filter-editor__empty', 'No filterable columns available.');
-    }
-    // Keep the editor's column in sync with what the server actually offers.
+    const filterable = filterableColumns();
+    // STATUS_COLUMN is always present, so filterable is never empty.
     const selected = filterable.find((c) => c.id === this.column) ?? filterable[0]!;
     if (this.column !== selected.id) {
       this.column = selected.id;
-      this.op = opsFor(selected.kind)[0] ?? 'contains';
+      this.op = opsFor(selected)[0] ?? 'contains';
+      this.suggestions = selected.id === 'status' ? STATUS_VALUES : [];
     }
-    const ops = opsFor(selected.kind);
+    const ops = opsFor(selected);
     const suggestible = this.isSuggestible(selected);
 
     return m('.tl-filter-editor', [
@@ -114,12 +135,13 @@ class FilterEditor implements m.ClassComponent {
     const column = filterable.find((c) => c.id === id);
     if (column === undefined) return;
     this.column = id;
-    this.op = opsFor(column.kind)[0] ?? 'contains';
+    this.op = opsFor(column)[0] ?? 'contains';
     this.value = '';
-    this.suggestions = [];
+    this.suggestions = id === 'status' ? STATUS_VALUES : [];
   }
 
   private isSuggestible(column: CatalogColumn): boolean {
+    if (column.id === 'status') return true;
     return (
       column.source === 'metadata' &&
       column.kind === 'text' &&
@@ -128,6 +150,10 @@ class FilterEditor implements m.ClassComponent {
   }
 
   private scheduleSuggest(columnId: string): void {
+    if (columnId === 'status') {
+      this.suggestions = STATUS_VALUES;
+      return;
+    }
     window.clearTimeout(this.suggestTimer);
     this.suggestTimer = window.setTimeout(() => {
       void store

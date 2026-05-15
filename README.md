@@ -18,35 +18,47 @@ server-rendered HTML.
 
 ## Screenshots
 
-| Catalog | Running processors |
+| Catalog | Live, starting and crashed traces in one grid |
 | --- | --- |
-| ![Catalog view](docs/screenshot-catalog.png) | ![Running processors](docs/screenshot-running.png) |
+| ![Catalog view](docs/screenshot-catalog.png) | ![Active traces](docs/screenshot-running.png) |
 
-| Filtering | Light theme |
+| Metadata filter | Filter by runtime state |
 | --- | --- |
-| ![Filter editor](docs/screenshot-filter.png) | ![Light theme](docs/screenshot-light.png) |
+| ![Metadata filter](docs/screenshot-filter.png) | ![Status filter](docs/screenshot-status-filter.png) |
+
+| Light theme | |
+| --- | --- |
+| ![Light theme](docs/screenshot-light.png) | |
 
 ## What it does
 
-- **Browse & search** — walk the trace directory, or search by name (within the
-  current directory, or recursively under the root with `--recursive-search`).
-- **Launch & track** — start a `trace_processor_shell server` per trace, open it
-  in ui.perfetto.dev, and stop it again. Starts are idempotent, so a
+- **One grid for everything** — traces and their live state share a single
+  catalog table. The leading column carries a fixed-width action slot (Start,
+  Cancel, Stop, Retry, Open in Perfetto) so columns line up no matter what
+  state a row is in. There is no separate "running" panel to keep in sync.
+- **Browse & search** — walk the trace directory, or search by name (within
+  the current directory, or recursively under the root with
+  `--recursive-search`).
+- **Filter by anything, including state** — structured filters on path, size,
+  every column of the optional metadata DB, and on the live runtime status
+  (`idle`, `live`, `starting`, `crashed`). Metadata filters compile to
+  parameterised SQL; status filters apply client-side. Search and filters
+  cover every state uniformly.
+- **Launch & track** — start a `trace_processor_shell server` per trace, open
+  it in ui.perfetto.dev, and stop it again. Starts are idempotent, so a
   double-click never spawns two servers.
-- **Honest status** — every child is shown as `starting`, `live`, or `crashed`
-  (with its exit code/signal). A crash is never silent; retry or dismiss it
-  inline.
+- **Honest status** — every child is shown as `starting`, `live`, or
+  `crashed` (with its exit code / signal) right inside its catalog row. A
+  crash is never silent; retry or dismiss it inline.
 - **Host stats** — host memory and disk usage, plus a roll-up of running
   processors and their total RSS.
 - **Configurable columns** — choose which columns the catalog shows: file
-  params (path, size, modified) and any column of an optional metadata DB.
-- **Structured filters** — filter the catalog on path, size, and metadata
-  columns. Metadata filters run as SQL against the metadata database;
-  text-column filters offer value autocomplete.
+  params (path, size, modified) and any column of the optional metadata DB.
 - **Optional metadata DB** — join a SQLite table of per-trace metadata
-  (device, duration, owner, …) onto the catalog for display and filtering.
-- **Dark / light themes**, fast debounced search, and inline progress on every
-  start/stop action.
+  (device, duration, owner, …) onto the catalog for display and filtering,
+  with distinct-value autocomplete in the filter editor.
+- **Dark / light themes**, fast debounced search (per-keystroke redraws
+  suppressed), and inline progress on every start/stop action.
 
 ## Quick start
 

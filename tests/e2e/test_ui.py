@@ -136,67 +136,66 @@ def run_scenarios(page: Page) -> None:
 
     # --- 4. start a trace -> live ------------------------------------------
     boot = trace_row(page, "android-boot.pftrace")
-    boot.get_by_role("button", name="Start").click()
-    page.wait_for_selector(".tl-rrow--live", timeout=15_000)
-    live_name = page.locator(".tl-rrow--live .tl-rrow__name").first.get_attribute(
-        "title"
+    boot.locator(".tl-td--actions button").first.dispatch_event("click")
+    page.wait_for_selector(
+        'tr.tl-tr--trace:has(.tl-name-cell__text[title="android-boot.pftrace"])'
+        ' .tl-state--live',
+        timeout=15_000,
     )
     check(
-        "starting a trace yields a live child",
-        live_name == "android-boot.pftrace",
-        f"live child: {live_name}",
+        "starting a trace yields the live state",
+        boot.locator(".tl-state--live").count() == 1,
     )
     shot(page, "running-live")
 
     # --- 5. a crashing trace_processor surfaces as crashed -----------------
-    trace_row(page, "broken-crash.pftrace").get_by_role(
-        "button", name="Start"
-    ).click()
-    page.wait_for_selector(".tl-rrow--crashed", timeout=15_000)
+    crash = trace_row(page, "broken-crash.pftrace")
+    crash.locator(".tl-td--actions button").first.dispatch_event("click")
+    page.wait_for_selector(
+        'tr.tl-tr--trace:has(.tl-name-cell__text[title="broken-crash.pftrace"])'
+        ' .tl-state--crashed',
+        timeout=15_000,
+    )
     check(
         "a crashing trace_processor is shown as crashed",
-        page.locator('.tl-rrow--crashed:has(.tl-rrow__name[title="broken-crash.pftrace"])').count()
-        == 1,
+        crash.locator(".tl-state--crashed").count() == 1,
     )
     shot(page, "crashed")
 
     # --- 6. a hanging trace_processor stays "starting" ---------------------
-    trace_row(page, "slow-hang.pftrace").get_by_role(
-        "button", name="Start"
-    ).click()
+    hang = trace_row(page, "slow-hang.pftrace")
+    hang.locator(".tl-td--actions button").first.dispatch_event("click")
     page.wait_for_selector(
-        '.tl-rrow--starting:has(.tl-rrow__name[title="slow-hang.pftrace"])',
+        'tr.tl-tr--trace:has(.tl-name-cell__text[title="slow-hang.pftrace"])'
+        ' .tl-state--starting',
         timeout=10_000,
     )
     page.wait_for_timeout(3500)  # it must NOT flip to live
-    still_starting = (
-        page.locator(
-            '.tl-rrow--starting:has(.tl-rrow__name[title="slow-hang.pftrace"])'
-        ).count()
-        == 1
+    check(
+        "a hanging trace_processor stays 'starting'",
+        hang.locator(".tl-state--starting").count() == 1,
     )
-    check("a hanging trace_processor stays 'starting'", still_starting)
     shot(page, "hang")
 
     # --- 7. double-clicking Start is idempotent ----------------------------
-    sched_btn = trace_row(page, "scheduler.trace").locator(
-        ".tl-td--actions button"
-    ).first
+    sched = trace_row(page, "scheduler.trace")
+    sched_btn = sched.locator(".tl-td--actions button").first
     # dispatch_event bypasses Playwright's actionability checks and goes
     # straight to the button's onclick handler, so we can fire two presses
-    # back-to-back without racing the inert-on-pending guard. That's exactly
-    # what we want here: prove the server stays idempotent even when both
-    # synthetic clicks land before the UI has marked the button busy.
+    # back-to-back without racing the inert-on-pending guard. That proves the
+    # server stays idempotent even when both synthetic clicks land before the
+    # UI has marked the button busy.
     sched_btn.dispatch_event("click")
     sched_btn.dispatch_event("click")
     page.wait_for_timeout(3000)
-    sched_children = page.locator(
-        '.tl-rrow:has(.tl-rrow__name[title="scheduler.trace"])'
+    # Exactly one of the three "active" states for the scheduler row.
+    active = sched.locator(
+        ".tl-state--live, .tl-state--starting, .tl-state--crashed"
     ).count()
     check(
         "double-click Start spawns only one child",
-        sched_children == 1,
-        f"{sched_children} child card(s)",
+        active == 1,
+        f"{active} active state(s) on scheduler row",
     )
 
     # --- 8. the Columns menu toggles a metadata column ---------------------
@@ -230,25 +229,25 @@ def run_scenarios(page: Page) -> None:
     shot(page, "filter")
 
     # --- 9b. "Start all shown" respects the active filter -------------------
-    # The filter scoped the catalog to two traces; only those should land in
-    # Running. (slow-hang is already running from test 6, so the count goes
-    # up by exactly one — chrome-startup.)
-    running_before = page.locator(".tl-rrow").count()
+    # The filter scoped the catalog to two traces; only those should be
+    # started. (slow-hang is already running from test 6, so just one new
+    # live trace lands — chrome-startup.)
+    active_states = ".tl-state--live, .tl-state--starting, .tl-state--crashed"
+    running_before = page.locator(active_states).count()
     page.get_by_role("button", name="Start all shown").click()
     page.wait_for_selector(
-        '.tl-rrow:has(.tl-rrow__name[title="chrome-startup.perfetto-trace"])',
+        'tr.tl-tr--trace:has(.tl-name-cell__text[title="chrome-startup.perfetto-trace"])'
+        ' .tl-state--live',
         timeout=12_000,
     )
     page.wait_for_timeout(800)
-    running_after = page.locator(".tl-rrow").count()
+    running_after = page.locator(active_states).count()
     check(
         "Start all shown only spawns traces in the filtered view",
         running_after == running_before + 1
-        and page.locator(
-            '.tl-rrow:has(.tl-rrow__name[title="chrome-startup.perfetto-trace"])'
-        ).count()
-        == 1,
-        f"running rows: {running_before} -> {running_after}",
+        and trace_row(page, "chrome-startup.perfetto-trace")
+            .locator(".tl-state--live").count() == 1,
+        f"active rows: {running_before} -> {running_after}",
     )
     shot(page, "bulk-filtered")
 
@@ -259,6 +258,27 @@ def run_scenarios(page: Page) -> None:
         "removing the filter restores the catalog",
         page.locator(".tl-chip-filter").count() == 0,
     )
+
+    # --- 9c. status filter narrows the catalog by runtime state ------------
+    page.get_by_role("button", name="Filters").click()
+    page.wait_for_selector(".tl-filter-panel")
+    selects = page.locator(".tl-filter-panel .tl-select")
+    selects.nth(0).select_option("status")
+    page.locator(".tl-filter-editor__value").fill("crashed")
+    page.get_by_role("button", name="Add").click()
+    page.wait_for_timeout(500)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+    crashed_rows = page.locator("tr.tl-tr--trace").count()
+    crashed_chips = page.locator("tr.tl-tr--trace .tl-state--crashed").count()
+    check(
+        "status filter narrows the catalog to crashed rows",
+        crashed_rows == 1 and crashed_chips == 1,
+        f"{crashed_rows} row(s), {crashed_chips} crashed",
+    )
+    shot(page, "status-filter")
+    page.locator(".tl-chip-filter__remove").first.click()
+    page.wait_for_timeout(500)
 
     # --- 10. directory navigation ------------------------------------------
     page.locator('tr.tl-tr--dir:has-text("nested")').click()
@@ -283,11 +303,16 @@ def run_scenarios(page: Page) -> None:
     page.wait_for_timeout(300)
 
     # --- 12. stop all -------------------------------------------------------
-    page.get_by_role("button", name="Stop all", exact=True).click()
+    page.get_by_role("button", name="Stop all shown").click()
     page.wait_for_timeout(1500)
-    remaining = page.locator(".tl-rrow").count()
-    check("Stop all reaps every running child", remaining == 0,
-          f"{remaining} child card(s) left")
+    remaining = page.locator(
+        ".tl-state--live, .tl-state--starting, .tl-state--crashed"
+    ).count()
+    check(
+        "Stop all shown reaps every running child",
+        remaining == 0,
+        f"{remaining} active row(s) left",
+    )
     shot(page, "stopped")
 
 

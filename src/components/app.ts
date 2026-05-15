@@ -2,7 +2,6 @@ import m from 'mithril';
 import {store} from '../core/store';
 import {Icon} from '../widgets/icon';
 import {CatalogPanel} from './catalog_panel';
-import {RunningPanel} from './running_panel';
 import {SystemBar} from './system_bar';
 import {TopBar} from './topbar';
 
@@ -45,7 +44,7 @@ export class App implements m.ClassComponent {
               m('span.tl-spinner.tl-spinner--lg'),
               m('p', 'Loading catalog…'),
             ])
-          : [m(SystemBar), m(RunningPanel), m(CatalogPanel)],
+          : [m(SystemBar), m(CatalogPanel)],
       ]),
       m(Footer),
     ]);

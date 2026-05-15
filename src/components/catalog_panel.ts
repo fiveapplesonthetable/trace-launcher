@@ -116,7 +116,10 @@ class DirRow
       [
         m(
           'td.tl-td.tl-td--actions',
-          m(Icon, {icon: 'chevronRight', size: 16, className: 'tl-chevron'}),
+          m(
+            '.tl-actions',
+            m(Icon, {icon: 'chevronRight', size: 16, className: 'tl-chevron'}),
+          ),
         ),
         m(
           'td.tl-td.tl-td--name',
@@ -151,7 +154,10 @@ class TraceRow
     const busy = pending || child?.status === 'starting';
 
     return m(`tr.tl-tr.tl-tr--trace${busy ? '.tl-tr--busy' : ''}`, [
-      m('td.tl-td.tl-td--actions', this.action(trace, child, pending)),
+      m(
+        'td.tl-td.tl-td--actions',
+        m('.tl-actions', this.action(trace, child, pending)),
+      ),
       m(
         'td.tl-td.tl-td--name',
         m('.tl-name-cell', [
@@ -225,10 +231,10 @@ class TraceRow
     child: RunningChild | undefined,
     pending: boolean,
   ): m.Children {
-    // Each row carries one icon-only action, fixed-width-aligned, in the
-    // leading column. The mapping is: idle/crashed -> start (or retry);
-    // live -> open in Perfetto; starting -> cancel. Stopping a live child
-    // happens from the dense Running panel above the catalog.
+    // The action cell holds up to two icon-only buttons in a fixed-width
+    // slot, so column alignment is preserved row-to-row regardless of state.
+    // Live and crashed rows get a primary + secondary pair; idle and starting
+    // rows get just one.
     if (child === undefined) {
       return m(Button, {
         icon: 'play',
@@ -240,19 +246,40 @@ class TraceRow
         onclick: () => void store.open(trace.key),
       });
     }
-    if (child.status === 'crashed') {
+    if (child.status === 'starting') {
       return m(Button, {
-        icon: 'refresh',
-        intent: 'primary',
+        icon: 'stop',
+        intent: 'danger',
         variant: 'outlined',
         compact: true,
-        title: 'Retry',
+        title: 'Cancel',
         loading: pending,
-        onclick: () => void store.open(trace.key),
+        onclick: () => void store.stop(trace.key),
       });
     }
-    if (child.status === 'live') {
-      return m(Button, {
+    if (child.status === 'crashed') {
+      return [
+        m(Button, {
+          icon: 'refresh',
+          intent: 'primary',
+          variant: 'outlined',
+          compact: true,
+          title: 'Retry',
+          loading: pending,
+          onclick: () => void store.open(trace.key),
+        }),
+        m(Button, {
+          icon: 'close',
+          variant: 'minimal',
+          compact: true,
+          title: 'Dismiss',
+          onclick: () => void store.stop(trace.key),
+        }),
+      ];
+    }
+    // live
+    return [
+      m(Button, {
         icon: 'external',
         intent: 'primary',
         variant: 'outlined',
@@ -260,17 +287,17 @@ class TraceRow
         title: 'Open in Perfetto',
         href: child.perfettoUrl,
         target: '_blank',
-      });
-    }
-    return m(Button, {
-      icon: 'stop',
-      intent: 'danger',
-      variant: 'outlined',
-      compact: true,
-      title: 'Cancel',
-      loading: pending,
-      onclick: () => void store.stop(trace.key),
-    });
+      }),
+      m(Button, {
+        icon: 'stop',
+        intent: 'danger',
+        variant: 'outlined',
+        compact: true,
+        title: 'Stop',
+        loading: pending,
+        onclick: () => void store.stop(trace.key),
+      }),
+    ];
   }
 }
 

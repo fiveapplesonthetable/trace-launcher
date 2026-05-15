@@ -236,13 +236,32 @@ class AppStore {
     return this.effectiveColumns().has(id);
   }
 
-  /** Catalog traces in the user's current sort order. */
+  /** Catalog traces after status filtering, in the user's sort order. */
   sortedTraces(): readonly TraceEntry[] {
-    const traces = this.state ? [...this.state.catalog.traces] : [];
+    const traces = [...this.clientFilteredTraces()];
     const {column, direction} = this.sort;
     const sign = direction === 'asc' ? 1 : -1;
     traces.sort((a, b) => sign * this.compare(column, a, b));
     return traces;
+  }
+
+  /**
+   * Catalog traces with every active client-side filter applied. Today the
+   * only client-side filter is `status` (a synthetic column whose values are
+   * the live RunningChild status); other filters are evaluated server-side.
+   */
+  private clientFilteredTraces(): readonly TraceEntry[] {
+    const all = this.state?.catalog.traces ?? [];
+    const statusFilters = this.filters.filter((f) => f.column === 'status');
+    if (statusFilters.length === 0) return all;
+    return all.filter((trace) => {
+      const status = this.runningFor(trace.key)?.status ?? 'idle';
+      return statusFilters.every((filter) => {
+        const target = filter.value.trim().toLowerCase();
+        if (filter.op === 'equals') return status === target;
+        return status.includes(target);
+      });
+    });
   }
 
   // --- internals -----------------------------------------------------------
@@ -274,7 +293,7 @@ class AppStore {
   }
 
   private visibleTraceKeys(): readonly string[] {
-    return (this.state?.catalog.traces ?? []).map((t) => t.key);
+    return this.clientFilteredTraces().map((t) => t.key);
   }
 
   private async withPending(
