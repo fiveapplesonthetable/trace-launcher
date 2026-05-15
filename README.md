@@ -383,6 +383,61 @@ npm run check        # typecheck + test + build
 npm run seed         # rebuild fixtures/metadata.db
 ```
 
+### Prewarm benchmark
+
+`tests/e2e/test_prewarm_bench.py` exercises the prewarm flow against a
+**real** `trace_processor_shell` (not the `fake-tp` shim that the
+deterministic suite uses) and reports timings for three modes
+(`no-prewarm`, `normal-prewarm`, `prewarm-sql`). The bench is also a
+strict end-to-end correctness check — it asserts that:
+
+- the "Version mismatch" and "Use trace processor native acceleration?"
+  modals are both auto-accepted (a stuck dialog would block the prewarm
+  tab forever and the bench would catch it), and
+- the page reaches first-track render and full idle without manual
+  intervention.
+
+Run:
+
+```sh
+TL_BENCH_TP_BINARY=/path/to/trace_processor_shell \
+TL_BENCH_TRACE=/path/to/a-real.pftrace \
+python3 tests/e2e/test_prewarm_bench.py
+```
+
+Reference numbers — `trace_processor_shell` from the Perfetto release
+prebuilts, Perfetto UI as of 2026-05-15, a 467 MB `.pftrace`. (Smaller
+traces show similar *shapes*; the prewarm-sql benefit only stands out
+on traces big enough that module compilation matters relative to query
+execution.)
+
+| Scenario       | Prewarm finish | Engine probe | First-track render | Fully idle |
+|----------------|---------------:|-------------:|-------------------:|-----------:|
+| no prewarm     |              — |        0.54s |             15.24s |     75.64s |
+| normal prewarm |         62.95s |        0.97s |             16.04s |     76.44s |
+| prewarm-sql    |        124.75s |  **0.00s**   |             13.99s |     74.37s |
+
+How to read these:
+
+- **Engine probe** is one direct round-trip of
+  `INCLUDE PERFETTO MODULE android.startup.startups; SELECT COUNT(*) FROM android_startups;`
+  against `trace_processor`'s HTTP RPC, with no browser in the middle.
+  It is the cleanest prewarm-sql signal: without `--prewarm-sql`,
+  `trace_processor` has to parse and compile the module on first
+  reference; with it, the module is already loaded and the query is a
+  straight table read. ~500× speed-up on this trace.
+- **Normal prewarm** primes Perfetto's *page-load* query burst (track
+  list, plugins, etc.) but does not help much on top of
+  `trace_processor`'s already-fast initial-query path. Useful as a
+  liveness probe — if it completes, the trace is openable.
+- **First-track** is the perceptually meaningful "I can see something"
+  moment in a real browser; **fully-idle** is bound from below by
+  Perfetto's hardcoded 60 s `waitForPerfettoIdle` deadline in headless
+  (its omnibox "message-mode" indicator stays set without user
+  interaction). A real user does not see that 60 s floor. The prewarmer
+  itself falls back to `networkidle` past this deadline so it never
+  wedges.
+
 ### End-to-end UI tests
 
 There are two complementary end-to-end suites under `tests/e2e/`, both

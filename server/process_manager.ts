@@ -80,9 +80,13 @@ interface Child {
   prewarmError: string | null;
 }
 
-/** Deep link that opens a child's RPC port in ui.perfetto.dev. */
+/** Deep link that opens a child's RPC port in ui.perfetto.dev. The
+ *  rpc_port must sit in the hash route's query — Perfetto reads it via
+ *  `Router.parseUrl(window.location.href).args.rpc_port`. Putting it in
+ *  location.search is silently ignored. URL form documented by Perfetto
+ *  itself in ui/src/frontend/index.ts (the comment around line 112). */
 function perfettoUrl(port: number): string {
-  return `https://ui.perfetto.dev/?rpc_port=${port}#!/viewer?rpc_port=${port}`;
+  return `https://ui.perfetto.dev/#!/?rpc_port=${port}`;
 }
 
 export class ProcessManager {
@@ -157,9 +161,19 @@ export class ProcessManager {
 
   private async spawnChild(trace: string): Promise<Child> {
     const port = await this.allocator.allocate(this.livePorts());
+    // Mirrors the official trace_processor_shell CLI: `-D` enables the HTTP
+    // RPC server, `--http-port` / `--http-ip-address` bind it, and the final
+    // positional is the trace file. (Older shims invented `server … http`
+    // sentinels — we match the real binary so trace-launcher works against
+    // an unmodified upstream build.)
     const proc = spawn(
       this.tpBinary,
-      ['server', '--ip-address', this.bind, '--port', String(port), 'http', trace],
+      [
+        '-D',
+        '--http-port', String(port),
+        '--http-ip-address', this.bind,
+        trace,
+      ],
       {stdio: 'ignore', detached: true},
     );
     if (proc.pid === undefined) {

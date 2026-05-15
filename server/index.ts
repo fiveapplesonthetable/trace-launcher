@@ -38,32 +38,6 @@ function fail(message: string): never {
   process.exit(2);
 }
 
-/**
- * Reads the bundled Perfetto stdlib module list from disk. Used by the
- * aggressive prewarm pass — `INCLUDE PERFETTO MODULE` once per name after
- * the page-load query burst has settled. Returns an empty array if the
- * file is missing or malformed; the caller treats that as "nothing extra
- * to warm" rather than a hard error.
- */
-function loadStdlibModules(): readonly string[] {
-  const file = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    'perfetto_stdlib.json',
-  );
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((m): m is string => typeof m === 'string');
-  } catch (err) {
-    process.stderr.write(
-      `warning: could not read ${file} ` +
-        `(${err instanceof Error ? err.message : String(err)}); ` +
-        `aggressive prewarm will be a no-op.\n`,
-    );
-    return [];
-  }
-}
-
 /** Opens the metadata DB if configured, or returns undefined. */
 function openMetadata(options: LaunchOptions): MetadataStore | undefined {
   if (options.metadataDb === null || options.metadataTable === null) {
@@ -112,11 +86,10 @@ function main(argv: readonly string[]): void {
     fail(err instanceof Error ? err.message : String(err));
   }
 
-  const stdlibModules = options.aggressivePrewarm ? loadStdlibModules() : [];
-  if (options.aggressivePrewarm) {
-    log(`aggressive prewarm  ${stdlibModules.length} stdlib modules`);
+  if (options.prewarmSql.length > 0) {
+    log(`prewarm sql         ${options.prewarmSql.length} char(s)`);
   }
-  const prewarmer = new Prewarmer(options.aggressivePrewarm, stdlibModules);
+  const prewarmer = new Prewarmer(options.prewarmSql);
   const processes = new ProcessManager(
     options.tpBinary,
     catalog,

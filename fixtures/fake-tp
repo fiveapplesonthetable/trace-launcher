@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # A stand-in for trace_processor_shell, used by `npm run dev` and the e2e tests.
 #
-# trace-launcher invokes it as:
-#   fake-tp server --ip-address <addr> --port <port> http <trace>
+# Accepts exactly the subset of the real trace_processor_shell CLI that
+# trace-launcher invokes:
+#
+#   fake-tp -D --http-port <port> --http-ip-address <addr> <trace>
 #
 # Behaviour is keyed off the trace filename so the UI's edge cases can be
 # exercised deterministically:
@@ -17,9 +19,10 @@ port="0"
 trace=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --ip-address) addr="$2"; shift 2 ;;
-    --port) port="$2"; shift 2 ;;
-    server | http) shift ;;
+    -D|--httpd) shift ;;
+    --http-ip-address) addr="$2"; shift 2 ;;
+    --http-port)       port="$2"; shift 2 ;;
+    -*) shift ;;   # ignore other flags the real binary accepts
     *) trace="$1"; shift ;;
   esac
 done

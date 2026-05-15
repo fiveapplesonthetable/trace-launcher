@@ -27,12 +27,17 @@ export interface LaunchOptions {
   readonly maxResults: number;
   readonly recursiveSearch: boolean;
   /**
-   * When true, every prewarm runs an extra pass that issues
-   * `INCLUDE PERFETTO MODULE <name>` for every entry in the bundled
-   * Perfetto stdlib catalog. Costs ~1-2 s more per prewarm but the
-   * user's later ad-hoc SQL in the UI hits a fully-primed cache.
+   * Extra SQL to run against each child's trace_processor at prewarm
+   * time, after the page-load query burst has settled. Combines the
+   * inline `--prewarm-sql` text and the contents of any
+   * `--prewarm-sql-file`. Empty means "no user SQL"; the prewarmer
+   * only does the page-load pass.
+   *
+   * The whole blob is sent in one `QueryArgs.sql_query` — trace_processor
+   * parses and executes multi-statement input, so the user can pack
+   * arbitrary `INCLUDE PERFETTO MODULE …; SELECT …;` chains here.
    */
-  readonly aggressivePrewarm: boolean;
+  readonly prewarmSql: string;
   /** Optional SQLite metadata DB; null disables the whole metadata layer. */
   readonly metadataDb: string | null;
   readonly metadataTable: string | null;
@@ -66,9 +71,13 @@ Options:
   --max-results <n>          max traces shown per page; 0 = unlimited (default 5000)
   --recursive-search         search recursively under --traces-dir (default)
   --no-recursive-search      scope search to the current directory only
-  --aggressive-prewarm       on every prewarm, also INCLUDE PERFETTO MODULE *
-                             so trace_processor caches every stdlib module
-                             (slower prewarm; faster ad-hoc SQL later)
+  --prewarm-sql <text>       extra SQL to run during every prewarm, after
+                             the page-load queries settle. Use to prime
+                             trace_processor for queries you know you'll
+                             run (e.g. INCLUDE PERFETTO MODULE android.startup;
+                             SELECT * FROM android_startups;).
+  --prewarm-sql-file <path>  same as --prewarm-sql but reads the SQL from
+                             a file. Composes with --prewarm-sql.
 
 Metadata (optional — joins a SQLite table to the trace list):
   --metadata-db <path>       SQLite database with a row of metadata per trace
@@ -111,7 +120,8 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
         'max-results': {type: 'string', default: '5000'},
         'recursive-search': {type: 'boolean', default: true},
         'no-recursive-search': {type: 'boolean', default: false},
-        'aggressive-prewarm': {type: 'boolean', default: false},
+        'prewarm-sql': {type: 'string'},
+        'prewarm-sql-file': {type: 'string'},
         'metadata-db': {type: 'string'},
         'metadata-table': {type: 'string'},
         'metadata-key-column': {type: 'string'},
@@ -205,7 +215,7 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
     maxResults,
     // Recursive search defaults on; an explicit --no-recursive-search wins.
     recursiveSearch: values['no-recursive-search'] !== true,
-    aggressivePrewarm: values['aggressive-prewarm'] === true,
+    prewarmSql: readPrewarmSql(values['prewarm-sql'], values['prewarm-sql-file']),
     metadataDb,
     metadataTable,
     metadataKeyColumn:
@@ -215,6 +225,31 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
 
 function asString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+/**
+ * Builds the final prewarm SQL blob from the two flags, in this order:
+ * file content first, inline string second. Returns '' when neither is
+ * set. Throws UsageError on file IO problems so the operator gets a
+ * clean message instead of a cryptic stack trace from somewhere deep.
+ */
+function readPrewarmSql(inline: unknown, file: unknown): string {
+  const parts: string[] = [];
+  if (typeof file === 'string' && file.length > 0) {
+    const filePath = path.resolve(expandUser(file));
+    try {
+      parts.push(fs.readFileSync(filePath, 'utf8'));
+    } catch (err) {
+      throw new UsageError(
+        `--prewarm-sql-file is not a readable file: ${filePath} ` +
+          `(${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  }
+  if (typeof inline === 'string' && inline.length > 0) {
+    parts.push(inline);
+  }
+  return parts.join('\n').trim();
 }
 
 function asStringArray(value: unknown): readonly string[] {
