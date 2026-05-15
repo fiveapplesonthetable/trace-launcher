@@ -52,7 +52,7 @@ const FILE_COLUMNS: readonly CatalogColumn[] = [
     label: 'Modified',
     kind: 'number',
     source: 'file',
-    filterable: false,
+    filterable: true,
     defaultVisible: true,
   },
 ];
@@ -339,7 +339,11 @@ export class Catalog {
   ): TraceEntry[] {
     let result = entries;
     for (const filter of filters) {
-      if (filter.column === 'rel' || filter.column === 'size') {
+      if (
+        filter.column === 'rel' ||
+        filter.column === 'size' ||
+        filter.column === 'modified'
+      ) {
         result = result.filter((e) => matchesFileFilter(e, filter));
       }
     }
@@ -429,15 +433,20 @@ function readDirEntries(dir: string): fs.Dirent[] {
   }
 }
 
-/** Evaluates a `rel` or `size` file-column filter against a trace entry. */
+/** Evaluates a built-in file-column filter against a trace entry. */
 function matchesFileFilter(entry: TraceEntry, filter: CatalogFilter): boolean {
   if (filter.column === 'rel') {
     return matchText(entry.rel, filter.op, filter.value);
   }
-  // filter.column === 'size'
-  const threshold = parseHumanSize(filter.value);
+  if (filter.column === 'size') {
+    const threshold = parseHumanSize(filter.value);
+    if (threshold === null) return false;
+    return matchNumber(entry.size, filter.op, threshold);
+  }
+  // filter.column === 'modified'
+  const threshold = parseHumanTime(filter.value);
   if (threshold === null) return false;
-  return matchNumber(entry.size, filter.op, threshold);
+  return matchNumber(entry.mtimeMs, filter.op, threshold);
 }
 
 /** True if any of a trace's identifiers is in a metadata key set. */
@@ -451,8 +460,12 @@ function matchText(value: string, op: FilterOp, target: string): boolean {
   switch (op) {
     case 'contains':
       return v.includes(t);
+    case 'not_contains':
+      return !v.includes(t);
     case 'equals':
       return v === t;
+    case 'not_equals':
+      return v !== t;
     case 'gt':
       return v > t;
     case 'gte':
@@ -468,6 +481,8 @@ function matchNumber(value: number, op: FilterOp, target: number): boolean {
   switch (op) {
     case 'equals':
       return value === target;
+    case 'not_equals':
+      return value !== target;
     case 'gt':
       return value > target;
     case 'gte':
@@ -478,7 +493,55 @@ function matchNumber(value: number, op: FilterOp, target: number): boolean {
       return value <= target;
     case 'contains':
       return String(value).includes(String(target));
+    case 'not_contains':
+      return !String(value).includes(String(target));
   }
+}
+
+/**
+ * Parses a human-readable date into epoch milliseconds. Accepts:
+ *
+ *   - `today` / `now`        — start of today / current moment
+ *   - `yesterday`            — start of yesterday
+ *   - `N (minute|hour|day|week|month|year)s ago` — relative to now
+ *   - ISO date `YYYY-MM-DD`  — start of that day
+ *   - bare integer           — passed through as ms (for power users)
+ *
+ * Returns null if nothing parses. The intent is "what a user would
+ * type": `> 1 day ago` for *recent traces*, `< yesterday` for *old
+ * traces*. Absolute dates work too for pinning a specific session.
+ */
+export function parseHumanTime(input: string, now: number = Date.now()): number | null {
+  const v = input.trim().toLowerCase();
+  if (v === '') return null;
+  if (v === 'now') return now;
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  if (v === 'today') return startOfToday.getTime();
+  if (v === 'yesterday') return startOfToday.getTime() - 86_400_000;
+  const rel = /^(\d+(?:\.\d+)?)\s+(minute|hour|day|week|month|year)s?\s+ago$/.exec(v);
+  if (rel !== null) {
+    const n = Number(rel[1]);
+    const unit = rel[2] as string;
+    const ms: Record<string, number> = {
+      minute: 60_000,
+      hour: 3_600_000,
+      day: 86_400_000,
+      week: 604_800_000,
+      month: 30 * 86_400_000,
+      year: 365 * 86_400_000,
+    };
+    return now - n * (ms[unit] ?? 0);
+  }
+  // ISO date — accept YYYY-MM-DD or full ISO.
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
+    const t = Date.parse(input);
+    if (!Number.isNaN(t)) return t;
+  }
+  // Bare number — treat as milliseconds.
+  const num = Number(v);
+  if (Number.isFinite(num)) return num;
+  return null;
 }
 
 const SIZE_MULTIPLIERS: Readonly<Record<string, number>> = {

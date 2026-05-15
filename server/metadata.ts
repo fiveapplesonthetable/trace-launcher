@@ -235,9 +235,10 @@ function compilePredicate(
 ): {sql: string; param: MetadataValue} {
   const col = `"${column.name}"`;
   if (column.kind === 'number') {
-    if (op === 'contains') {
+    if (op === 'contains' || op === 'not_contains') {
+      const not = op === 'not_contains' ? 'NOT ' : '';
       return {
-        sql: `CAST(${col} AS TEXT) LIKE ? ESCAPE '\\'`,
+        sql: `CAST(${col} AS TEXT) ${not}LIKE ? ESCAPE '\\'`,
         param: `%${escapeLike(value)}%`,
       };
     }
@@ -256,8 +257,15 @@ function compilePredicate(
         sql: `${col} LIKE ? ESCAPE '\\'`,
         param: `%${escapeLike(value)}%`,
       };
+    case 'not_contains':
+      return {
+        sql: `${col} NOT LIKE ? ESCAPE '\\'`,
+        param: `%${escapeLike(value)}%`,
+      };
     case 'equals':
       return {sql: `${col} = ?`, param: value};
+    case 'not_equals':
+      return {sql: `${col} <> ?`, param: value};
     case 'gt':
       return {sql: `${col} > ?`, param: value};
     case 'gte':
@@ -269,10 +277,12 @@ function compilePredicate(
   }
 }
 
-function numericOperator(op: Exclude<FilterOp, 'contains'>): string {
+function numericOperator(op: Exclude<FilterOp, 'contains' | 'not_contains'>): string {
   switch (op) {
     case 'equals':
       return '=';
+    case 'not_equals':
+      return '<>';
     case 'gt':
       return '>';
     case 'gte':

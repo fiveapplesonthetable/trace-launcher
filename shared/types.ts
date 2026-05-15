@@ -68,8 +68,18 @@ export interface CatalogColumn {
   readonly defaultVisible: boolean;
 }
 
-/** Comparison operators available to filters. */
-export type FilterOp = 'contains' | 'equals' | 'gt' | 'gte' | 'lt' | 'lte';
+/** Comparison operators available to filters. Vocabulary mirrors
+ *  Perfetto UI's datagrid filter menu (`Equals`, `Greater than`, …) so
+ *  users moving between the two tools see the same names. */
+export type FilterOp =
+  | 'contains'
+  | 'not_contains'
+  | 'equals'
+  | 'not_equals'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte';
 
 /** A single structured filter applied to the catalog. */
 export interface CatalogFilter {

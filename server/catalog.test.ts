@@ -4,7 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import {test, type TestContext} from 'node:test';
 
-import {Catalog, CatalogError, looksLikeTrace, parseHumanSize} from './catalog';
+import {
+  Catalog,
+  CatalogError,
+  looksLikeTrace,
+  parseHumanSize,
+  parseHumanTime,
+} from './catalog';
 
 function tmpDir(t: TestContext, prefix: string): string {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -124,6 +130,25 @@ test('selected mode exposes only the allow-listed traces', (t) => {
     () => catalog.validate(path.join(root, 'beta.perfetto-trace')),
     CatalogError,
   );
+});
+
+test('parseHumanTime accepts the inputs the filter UI advertises', () => {
+  // Pin "now" so the expectations are deterministic — 2026-05-15 12:00 UTC.
+  const now = Date.UTC(2026, 4, 15, 12, 0, 0);
+  const startOfToday = Date.UTC(2026, 4, 15, 0, 0, 0);
+  assert.equal(parseHumanTime('now', now), now);
+  assert.equal(parseHumanTime('today', now), startOfToday);
+  assert.equal(parseHumanTime('yesterday', now), startOfToday - 86_400_000);
+  assert.equal(parseHumanTime('1 day ago', now), now - 86_400_000);
+  assert.equal(parseHumanTime('2 weeks ago', now), now - 14 * 86_400_000);
+  assert.equal(parseHumanTime('30 minutes ago', now), now - 30 * 60_000);
+  // ISO date parses to midnight UTC at minimum.
+  const isoMidday = parseHumanTime('2026-05-01', now);
+  assert.ok(isoMidday !== null && Number.isFinite(isoMidday));
+  assert.equal(parseHumanTime('garbage', now), null);
+  assert.equal(parseHumanTime('', now), null);
+  // Bare numbers come through unchanged (escape hatch for ms timestamps).
+  assert.equal(parseHumanTime('1700000000000', now), 1700000000000);
 });
 
 test('parseHumanSize understands plain bytes and unit suffixes', () => {

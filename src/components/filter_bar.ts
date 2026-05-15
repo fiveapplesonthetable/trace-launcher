@@ -22,17 +22,44 @@ import {Icon} from '../widgets/icon';
 
 const FREE_TEXT_COLUMN_ID = 'name';
 
+/**
+ * Operator vocabulary. Labels mirror Perfetto UI's datagrid filter
+ * menu — `Equals`, `Greater than`, … — so users moving between
+ * trace-launcher and ui.perfetto.dev see the same names. Mathematical
+ * symbols (`≥`, `<`, etc.) are too terse for a non-power-user filter
+ * builder; spelled-out wins on scannability.
+ */
 const OP_LABELS: Readonly<Record<FilterOp, string>> = {
+  contains: 'Contains',
+  not_contains: 'Does not contain',
+  equals: 'Equals',
+  not_equals: 'Not equals',
+  gt: 'Greater than',
+  gte: 'Greater than or equals',
+  lt: 'Less than',
+  lte: 'Less than or equals',
+};
+/** Short chip label — fits in a chip without overflowing. */
+const OP_CHIP_LABELS: Readonly<Record<FilterOp, string>> = {
   contains: 'contains',
+  not_contains: 'does not contain',
   equals: 'is',
+  not_equals: 'is not',
   gt: '>',
   gte: '≥',
   lt: '<',
   lte: '≤',
 };
-const TEXT_OPS: readonly FilterOp[] = ['contains', 'equals'];
-const NUMBER_OPS: readonly FilterOp[] = ['equals', 'gte', 'lte', 'gt', 'lt'];
-const STATUS_OPS: readonly FilterOp[] = ['equals'];
+const TEXT_OPS: readonly FilterOp[] = ['contains', 'not_contains', 'equals', 'not_equals'];
+const NUMBER_OPS: readonly FilterOp[] = [
+  'equals',
+  'not_equals',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+];
+const STATUS_OPS: readonly FilterOp[] = ['equals', 'not_equals'];
 const SUGGEST_DEBOUNCE_MS = 140;
 
 /**
@@ -90,6 +117,20 @@ function columnLabel(id: string): string {
 function staticSuggestions(column: CatalogColumn): readonly string[] | null {
   if (column.id === STATUS_COLUMN.id) return STATUS_VALUES;
   return null;
+}
+
+/**
+ * Hint text inside the value input, chosen per column so the example
+ * doubles as documentation of what the column accepts. The server
+ * parses `Size` as "5MB", "1.5GB", … and `Modified` as "1 day ago",
+ * `2026-05-01`, etc.; showing those examples upfront beats forcing
+ * users to guess and read a help tooltip.
+ */
+function placeholderFor(column: CatalogColumn): string {
+  if (column.id === 'size') return 'e.g. 10MB, 1.5GB';
+  if (column.id === 'modified') return 'e.g. 1 day ago, today, 2026-05-01';
+  if (column.kind === 'number') return 'Type a number…';
+  return `Type a ${column.label.toLowerCase()}…`;
 }
 
 function dynamicallySuggestible(column: CatalogColumn): boolean {
@@ -242,7 +283,7 @@ export class SearchFilterBar implements m.ClassComponent {
       ? recursive
         ? 'Search every trace under the root…'
         : 'Search traces in this directory…'
-      : `Type a ${this.editorColumn.label.toLowerCase()}…`;
+      : placeholderFor(this.editorColumn);
 
     return m('.pf-tl-sfb', [
       // ── leading column picker — the "context" of the search bar ────
@@ -456,7 +497,7 @@ export class FilterChips implements m.ClassComponent {
             [
               m('span.pf-tl-chip-filter__text', [
                 m('strong', columnLabel(filter.column)),
-                ` ${OP_LABELS[filter.op]} `,
+                ` ${OP_CHIP_LABELS[filter.op]} `,
                 filter.value,
               ]),
               m(

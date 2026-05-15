@@ -25,7 +25,9 @@ export interface ApiDeps {
 
 const FILTER_OPS: readonly FilterOp[] = [
   'contains',
+  'not_contains',
   'equals',
+  'not_equals',
   'gt',
   'gte',
   'lt',
