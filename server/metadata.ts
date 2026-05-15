@@ -117,7 +117,18 @@ export class MetadataStore {
     const sql =
       `SELECT "${this.keyColumn}" AS k FROM "${this.table}" ` +
       `WHERE ${clauses.join(' AND ')}`;
-    const rows = this.db.prepare(sql).all(...params) as Array<{k: MetadataValue}>;
+    // The DB file can disappear or get corrupted mid-session (a user
+    // re-running the seeding script, a remote mount dropping, …). We
+    // would rather degrade to "no metadata matches" with a single
+    // operator log line than 500 every poll until the server is
+    // restarted.
+    let rows: Array<{k: MetadataValue}> = [];
+    try {
+      rows = this.db.prepare(sql).all(...params) as Array<{k: MetadataValue}>;
+    } catch (err) {
+      process.stderr.write(`metadata: filter query failed — ${messageOf(err)}\n`);
+      return new Set();
+    }
 
     const matched = new Set<string>();
     for (const row of rows) {
@@ -141,9 +152,18 @@ export class MetadataStore {
       `WHERE "${column.name}" IS NOT NULL ` +
       `AND CAST("${column.name}" AS TEXT) LIKE ? ESCAPE '\\' ` +
       `ORDER BY v LIMIT ${SUGGEST_LIMIT}`;
-    const rows = this.db
-      .prepare(sql)
-      .all(`${escapeLike(prefix)}%`) as Array<{v: MetadataValue}>;
+    // Same fail-soft rationale as filterKeys — autocomplete is
+    // non-essential; better to return zero values than to fail the
+    // whole catalog page.
+    let rows: Array<{v: MetadataValue}> = [];
+    try {
+      rows = this.db
+        .prepare(sql)
+        .all(`${escapeLike(prefix)}%`) as Array<{v: MetadataValue}>;
+    } catch (err) {
+      process.stderr.write(`metadata: suggest query failed — ${messageOf(err)}\n`);
+      return [];
+    }
     return rows
       .map((r) => (r.v === null ? '' : String(r.v)))
       .filter((v) => v !== '');

@@ -52,8 +52,13 @@ async function runConcurrent<T>(
       try {
         await task(items[i] as T);
         success++;
-      } catch {
-        // Best-effort: one bad trace must not abort its siblings.
+      } catch (err) {
+        // Best-effort: one bad trace must not abort its siblings —
+        // but we still log the reason. Silent failures here turned
+        // an out-of-ports batch into `started=0` with no diagnostic.
+        process.stderr.write(
+          `batch worker: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
       }
     }
   };
