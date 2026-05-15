@@ -137,8 +137,8 @@ def run_scenarios(page: Page) -> None:
     # --- 4. start a trace -> live ------------------------------------------
     boot = trace_row(page, "android-boot.pftrace")
     boot.get_by_role("button", name="Start").click()
-    page.wait_for_selector(".tl-child--live", timeout=15_000)
-    live_name = page.locator(".tl-child--live .tl-child__name").first.get_attribute(
+    page.wait_for_selector(".tl-rrow--live", timeout=15_000)
+    live_name = page.locator(".tl-rrow--live .tl-rrow__name").first.get_attribute(
         "title"
     )
     check(
@@ -152,10 +152,10 @@ def run_scenarios(page: Page) -> None:
     trace_row(page, "broken-crash.pftrace").get_by_role(
         "button", name="Start"
     ).click()
-    page.wait_for_selector(".tl-child--crashed", timeout=15_000)
+    page.wait_for_selector(".tl-rrow--crashed", timeout=15_000)
     check(
         "a crashing trace_processor is shown as crashed",
-        page.locator('.tl-child--crashed:has(.tl-child__name[title="broken-crash.pftrace"])').count()
+        page.locator('.tl-rrow--crashed:has(.tl-rrow__name[title="broken-crash.pftrace"])').count()
         == 1,
     )
     shot(page, "crashed")
@@ -165,13 +165,13 @@ def run_scenarios(page: Page) -> None:
         "button", name="Start"
     ).click()
     page.wait_for_selector(
-        '.tl-child--starting:has(.tl-child__name[title="slow-hang.pftrace"])',
+        '.tl-rrow--starting:has(.tl-rrow__name[title="slow-hang.pftrace"])',
         timeout=10_000,
     )
     page.wait_for_timeout(3500)  # it must NOT flip to live
     still_starting = (
         page.locator(
-            '.tl-child--starting:has(.tl-child__name[title="slow-hang.pftrace"])'
+            '.tl-rrow--starting:has(.tl-rrow__name[title="slow-hang.pftrace"])'
         ).count()
         == 1
     )
@@ -189,7 +189,7 @@ def run_scenarios(page: Page) -> None:
         pass  # button became inert — exactly the protection we want
     page.wait_for_timeout(2500)
     sched_children = page.locator(
-        '.tl-child:has(.tl-child__name[title="scheduler.trace"])'
+        '.tl-rrow:has(.tl-rrow__name[title="scheduler.trace"])'
     ).count()
     check(
         "double-click Start spawns only one child",
@@ -259,7 +259,7 @@ def run_scenarios(page: Page) -> None:
     # --- 12. stop all -------------------------------------------------------
     page.get_by_role("button", name="Stop all", exact=True).click()
     page.wait_for_timeout(1500)
-    remaining = page.locator(".tl-child").count()
+    remaining = page.locator(".tl-rrow").count()
     check("Stop all reaps every running child", remaining == 0,
           f"{remaining} child card(s) left")
     shot(page, "stopped")

@@ -7,79 +7,77 @@ import {Icon} from '../widgets/icon';
 import {MiddleEllipsis} from '../widgets/middle_ellipsis';
 import {ProgressBar} from '../widgets/progress_bar';
 
-// The "Running" panel: one card per trace_processor child, including ones that
-// crashed (so a failed start is never silent). A busy card shows an inline
-// indeterminate progress bar so start/stop always feels responsive.
+// The "Running" panel: one dense row per trace_processor child, including any
+// that crashed (so a failed start is never silent). Designed to take a single
+// line of vertical space per child — useful information without filling the
+// screen. A busy row shows an inline indeterminate progress bar.
 
 /** How long a child may sit in 'starting' before we flag it as slow. */
 const SLOW_START_MS = 8000;
 
-class ChildCard implements m.ClassComponent<{child: RunningChild}> {
+interface MetricProps {
+  readonly label: string;
+  readonly value: string;
+}
+
+class Metric implements m.ClassComponent<MetricProps> {
+  view({attrs}: m.CVnode<MetricProps>): m.Children {
+    return m('span.tl-rrow-metric', [m('em', attrs.label), attrs.value]);
+  }
+}
+
+class ChildRow implements m.ClassComponent<{child: RunningChild}> {
   view({attrs}: m.CVnode<{child: RunningChild}>): m.Children {
     const {child} = attrs;
     const pending = store.isPending(child.key);
     const busy = pending || child.status === 'starting';
 
-    return m(`.tl-child.tl-child--${child.status}`, [
-      m('.tl-child__top', [
-        m('.tl-child__status', [
-          m(`span.tl-dot.tl-dot--${child.status}`),
-          m('span', this.statusLabel(child)),
-        ]),
-        child.status !== 'crashed'
-          ? m('code.tl-chip', `:${child.port}`)
-          : null,
-      ]),
-      m(MiddleEllipsis, {text: child.name, className: 'tl-child__name'}),
+    return m(`.tl-rrow.tl-rrow--${child.status}`, [
+      m(`span.tl-dot.tl-dot--${child.status}`),
       m(MiddleEllipsis, {
-        text: child.rel,
-        endChars: 16,
-        className: 'tl-child__rel',
+        text: child.name,
+        endChars: 14,
+        className: 'tl-rrow__name',
       }),
-      m('.tl-child__metrics', this.metrics(child)),
-      m('.tl-child__actions', this.actions(child, pending)),
-      busy
-        ? m(ProgressBar, {className: 'tl-child__progress'})
-        : m('.tl-child__progress-spacer'),
+      child.status !== 'crashed'
+        ? m('code.tl-chip', `:${child.port}`)
+        : null,
+      m('.tl-rrow__metrics', this.metrics(child)),
+      m('.tl-rrow__actions', this.actions(child, pending)),
+      busy ? m(ProgressBar, {className: 'tl-rrow__progress'}) : null,
     ]);
   }
 
-  private statusLabel(child: RunningChild): string {
-    switch (child.status) {
-      case 'live':
-        return 'Live';
-      case 'starting':
-        return Date.now() - child.startedMs > SLOW_START_MS
-          ? 'Starting — slow'
-          : 'Starting';
-      case 'crashed': {
-        const exit = child.exit;
-        if (exit === undefined) return 'Exited';
-        if (exit.signal !== null) return `Crashed · ${exit.signal}`;
-        if (exit.code !== null && exit.code !== 0) {
-          return `Exited · code ${exit.code}`;
-        }
-        return 'Exited';
-      }
-    }
-  }
-
   private metrics(child: RunningChild): m.Children {
-    const metric = (label: string, value: string): m.Children =>
-      m('span.tl-metric', [m('em', label), value]);
-
     if (child.status === 'crashed') {
+      const exit = child.exit;
+      const detail =
+        exit !== undefined && exit.signal !== null
+          ? `signal ${exit.signal}`
+          : exit !== undefined && exit.code !== null && exit.code !== 0
+            ? `code ${exit.code}`
+            : 'exit 0';
       return [
-        metric('pid', String(child.pid)),
-        metric('exited', formatRelativeTime(child.exit?.exitedMs ?? 0)),
-        metric('trace', formatSize(child.traceSize)),
+        m(Metric, {label: 'pid', value: String(child.pid)}),
+        m(Metric, {
+          label: 'exited',
+          value: formatRelativeTime(child.exit?.exitedMs ?? 0),
+        }),
+        m('span.tl-rrow-metric.tl-rrow-metric--bad', detail),
       ];
     }
+    const slow =
+      child.status === 'starting' &&
+      Date.now() - child.startedMs > SLOW_START_MS;
+    const ageLabel = slow ? 'slow' : 'age';
     return [
-      metric('pid', String(child.pid)),
-      metric('age', formatDuration(Date.now() - child.startedMs)),
-      metric('rss', formatSize(child.rssBytes)),
-      metric('trace', formatSize(child.traceSize)),
+      m(Metric, {label: 'pid', value: String(child.pid)}),
+      m(Metric, {
+        label: ageLabel,
+        value: formatDuration(Date.now() - child.startedMs),
+      }),
+      m(Metric, {label: 'rss', value: formatSize(child.rssBytes)}),
+      m(Metric, {label: 'trace', value: formatSize(child.traceSize)}),
     ];
   }
 
@@ -106,7 +104,7 @@ class ChildCard implements m.ClassComponent<{child: RunningChild}> {
     const live = child.status === 'live';
     return [
       m(Button, {
-        label: 'Open in Perfetto',
+        label: 'Open',
         icon: 'external',
         intent: 'primary',
         compact: true,
@@ -115,11 +113,11 @@ class ChildCard implements m.ClassComponent<{child: RunningChild}> {
         target: '_blank',
       }),
       m(Button, {
-        label: live ? 'Stop' : 'Cancel',
         icon: 'stop',
         intent: 'danger',
-        variant: 'outlined',
+        variant: 'minimal',
         compact: true,
+        title: live ? 'Stop' : 'Cancel',
         loading: pending,
         onclick: () => void store.stop(child.key),
       }),
@@ -150,18 +148,15 @@ export class RunningPanel implements m.ClassComponent {
           : null,
       ]),
       running.length === 0
-        ? m('.tl-empty', [
-            m(Icon, {icon: 'play', size: 26, className: 'tl-empty__icon'}),
-            m('p.tl-empty__title', 'Nothing running yet'),
-            m(
-              'p.tl-empty__hint',
-              'Start a trace processor from the catalog below.',
-            ),
-          ])
+        ? m(
+            '.tl-rrow-empty',
+            m(Icon, {icon: 'play', size: 14}),
+            'No trace processors running — start one from the catalog above.',
+          )
         : m(
-            '.tl-child-grid',
+            '.tl-rrow-list',
             running.map((child) =>
-              m(ChildCard, {key: child.key, child}),
+              m(ChildRow, {key: child.key, child}),
             ),
           ),
     ]);

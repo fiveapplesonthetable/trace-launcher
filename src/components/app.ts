@@ -45,7 +45,7 @@ export class App implements m.ClassComponent {
               m('span.tl-spinner.tl-spinner--lg'),
               m('p', 'Loading catalog…'),
             ])
-          : [m(SystemBar), m(RunningPanel), m(CatalogPanel)],
+          : [m(SystemBar), m(CatalogPanel), m(RunningPanel)],
       ]),
       m(Footer),
     ]);
