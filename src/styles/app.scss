@@ -519,18 +519,6 @@ code {
   border-radius: var(--pf-tl-radius-md);
   background: var(--pf-color-background-secondary);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
-  animation: pf-tl-fb-pop 120ms ease-out;
-}
-
-@keyframes pf-tl-fb-pop {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 // Horizontal segmented control of every filterable column. Scrolls if

@@ -97,6 +97,7 @@ class FilterBuilder
   private highlight = -1;
   private suggestTimer: number | undefined;
   private valueInputDom: HTMLInputElement | null = null;
+  private onClose: () => void = () => {};
 
   oncreate(): void {
     // Focus straight into the value input on open. The user has already
@@ -110,6 +111,9 @@ class FilterBuilder
   }
 
   view({attrs}: m.CVnode<{onClose: () => void}>): m.Children {
+    // Stash the latest onClose for keyboard handlers that fire outside
+    // the click handlers' lexical scope (Enter on the value input, Esc).
+    this.onClose = attrs.onClose;
     const filterable = filterableColumns();
     // filterableColumns() always prepends STATUS_COLUMN — empty would be
     // an invariant violation, but we guard rather than non-null-assert so
@@ -181,7 +185,7 @@ class FilterBuilder
           'button.pf-tl-fb__add',
           {
             disabled: this.value.trim() === '',
-            onclick: () => this.commit(attrs.onClose),
+            onclick: () => this.commit(),
           },
           'Add',
         ),
@@ -190,7 +194,7 @@ class FilterBuilder
           {
             title: 'Cancel (Esc)',
             'aria-label': 'Cancel',
-            onclick: attrs.onClose,
+            onclick: () => this.onClose(),
           },
           m(Icon, {icon: 'close', size: 14}),
         ),
@@ -220,7 +224,7 @@ class FilterBuilder
                     // browsers and would dismiss the suggestion list first.
                     e.preventDefault();
                     this.value = value;
-                    this.commit(attrs.onClose);
+                    this.commit();
                   },
                 },
                 value,
@@ -234,12 +238,13 @@ class FilterBuilder
   private onKey(e: KeyboardEvent, list: readonly string[]): void {
     if (e.key === 'Escape') {
       e.preventDefault();
+      this.onClose();
       return;
     }
     if (list.length === 0) {
       if (e.key === 'Enter') {
         e.preventDefault();
-        this.commit(() => {});
+        this.commit();
       }
       return;
     }
@@ -259,7 +264,7 @@ class FilterBuilder
         const picked = list[this.highlight] as string;
         this.value = picked;
       }
-      this.commit(() => {});
+      this.commit();
       return;
     }
   }
@@ -306,7 +311,7 @@ class FilterBuilder
     }, SUGGEST_DEBOUNCE_MS);
   }
 
-  private commit(close: () => void): void {
+  private commit(): void {
     const value = this.value.trim();
     if (value === '') return;
     store.addFilter({column: this.column, op: this.op, value});
@@ -315,7 +320,7 @@ class FilterBuilder
       filterableColumns().find((c) => c.id === this.column) ?? STATUS_COLUMN,
     ) ?? [];
     this.highlight = -1;
-    close();
+    this.onClose();
   }
 }
 
