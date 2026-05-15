@@ -675,13 +675,19 @@ code {
   // Native off-screen culling: the browser skips layout + paint for rows
   // not currently in the viewport, giving virtual-scroll-grade performance
   // for catalogs into the thousands without a hand-rolled windowed
-  // renderer or scroll listener. `contain-intrinsic-size` advertises an
-  // assumed row height so the scrollbar geometry stays accurate before
-  // the rows render. Firefox falls back to normal rendering until they
-  // ship content-visibility broadly; that's still acceptable for tables
-  // up to a few thousand rows.
+  // renderer or scroll listener.
+  //
+  // `contain-intrinsic-size: auto <h>` is the no-flicker form: the browser
+  // uses <h> as the placeholder height *only on the first encounter*, and
+  // from then on remembers the row's actual rendered size. This eliminates
+  // the small layout reflow ("flicker") that the cheaper form
+  // (`0 <h>`) produces every time a row scrolls back into view, because
+  // the cached size matches the real size on the second pass and beyond.
+  // The placeholder is intentionally larger than a basename-only row so
+  // we err toward "advertised height ≥ real height", which prevents the
+  // viewport from over-extending and snapping back during fast scrolls.
   content-visibility: auto;
-  contain-intrinsic-size: 0 38px;
+  contain-intrinsic-size: auto 52px;
 
   &:last-child {
     border-bottom: none;
@@ -760,6 +766,29 @@ code {
   min-width: 0;
 }
 
+// When the row is live, the basename links straight to ui.perfetto.dev
+// wired to its RPC port. Styled to read as a link without distracting from
+// the basename itself: subtle accent hue + hover underline + focus ring.
+.pf-tl-name-cell__link {
+  display: inline-flex;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 2px;
+
+  &:hover .pf-tl-name-cell__text,
+  &:focus-visible .pf-tl-name-cell__text {
+    color: var(--pf-color-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--pf-color-accent);
+    outline-offset: 1px;
+  }
+}
+
 .pf-tl-row-icon {
   display: grid;
   place-items: center;
@@ -834,6 +863,17 @@ code {
       opacity: 0.85;
     }
   }
+  &--prewarm-failed {
+    color: var(--pf-color-warning);
+    // Crossed-out bolt: visually tied to the prewarm action, but flagged.
+    &::before {
+      content: '⚡';
+      margin-right: 3px;
+      font-size: 10px;
+      opacity: 0.6;
+      text-decoration: line-through;
+    }
+  }
   &--crashed {
     color: var(--pf-color-danger);
   }
@@ -845,7 +885,7 @@ code {
   align-items: center;
   gap: 4px;
   padding: 2px 4px 2px 5px;
-  max-width: 260px;
+  max-width: 320px;
   border-radius: var(--pf-tl-radius-sm);
   border: 1px solid color-mix(in srgb, var(--pf-color-danger) 50%, transparent);
   background: color-mix(in srgb, var(--pf-color-danger) 12%, transparent);
@@ -855,6 +895,15 @@ code {
 
   .pf-tl-icon {
     flex: 0 0 auto;
+  }
+
+  // Prewarm-failed: derived from server state, not dismissable from the UI.
+  // Painted in the warning palette to match the chip and read "this can be
+  // retried", not "this is fatal".
+  &--prewarm {
+    border-color: color-mix(in srgb, var(--pf-color-warning) 55%, transparent);
+    background: color-mix(in srgb, var(--pf-color-warning) 12%, transparent);
+    color: var(--pf-color-warning);
   }
 }
 

@@ -16,6 +16,7 @@ export type RowState =
   | 'live'
   | 'prewarming'
   | 'prewarmed'
+  | 'prewarm-failed'
   | 'crashed';
 
 /** Per-trace error surfaced inline in the row (out-of-ports, validation, …). */
@@ -24,13 +25,18 @@ export interface RowError {
   readonly code?: string;
 }
 
-/** Folds child status + prewarm into the single row state the UI displays. */
+/** Folds child status + prewarm into the single row state the UI displays.
+ * `prewarm-failed` surfaces as its own chip rather than silently rolling back
+ * to `live` — otherwise a prewarm click flashes 'prewarming' for a fraction
+ * of a second on a misconfigured host (no Chromium, sandbox issue, …) and
+ * looks like the click did nothing. */
 export function rowStateFor(child: RunningChild | undefined): RowState {
   if (child === undefined) return 'idle';
   if (child.status === 'starting') return 'starting';
   if (child.status === 'crashed') return 'crashed';
   if (child.prewarm === 'prewarming') return 'prewarming';
   if (child.prewarm === 'prewarmed') return 'prewarmed';
+  if (child.prewarm === 'prewarm-failed') return 'prewarm-failed';
   return 'live';
 }
 

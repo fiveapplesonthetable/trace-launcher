@@ -173,6 +173,19 @@ class TraceRow
     const parentDir = trace.rel.includes('/')
       ? trace.rel.slice(0, trace.rel.lastIndexOf('/'))
       : '';
+    // Once the child is live the basename links straight to ui.perfetto.dev
+    // wired to its RPC port — the single most common follow-up action gets
+    // a one-click affordance directly on the file name, not buried behind
+    // a hover state on a secondary icon.
+    const openUrl =
+      child !== undefined && child.status === 'live'
+        ? child.perfettoUrl
+        : undefined;
+    const basename = m(MiddleEllipsis, {
+      text: trace.name,
+      endChars: 14,
+      className: 'pf-tl-name-cell__text',
+    });
 
     return m(`tr.pf-tl-tr.pf-tl-tr--trace${busy ? '.pf-tl-tr--busy' : ''}`, [
       m(
@@ -191,11 +204,18 @@ class TraceRow
                   m(MiddleEllipsis, {text: parentDir, endChars: 18}),
                 )
               : null,
-            m(MiddleEllipsis, {
-              text: trace.name,
-              endChars: 14,
-              className: 'pf-tl-name-cell__text',
-            }),
+            openUrl !== undefined
+              ? m(
+                  'a.pf-tl-name-cell__link',
+                  {
+                    href: openUrl,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    title: `Open ${trace.name} in ui.perfetto.dev (rpc :${child?.port})`,
+                  },
+                  basename,
+                )
+              : basename,
           ]),
         ]),
       ),
@@ -237,20 +257,34 @@ class TraceRow
     child: RunningChild | undefined,
     busy: boolean,
   ): m.Children {
-    const error = store.errorFor(trace.key);
+    // Two sources of an inline error chip:
+    //   - an action error (Start / Prewarm / Stop) the API returned, owned
+    //     by the client store and dismissable.
+    //   - a prewarm task failure pulled from the server snapshot. Not
+    //     dismissable from the UI — the message disappears on the next
+    //     successful prewarm or once the row is stopped — but it is
+    //     surfaced visibly so the user knows "the bolt click did
+    //     something, and that something failed" rather than silently
+    //     flipping back to the live chip.
+    const actionError = store.errorFor(trace.key);
+    const prewarmFailedMessage =
+      actionError === undefined && child?.prewarm === 'prewarm-failed'
+        ? `Prewarm failed: ${child.prewarmError ?? 'unknown reason'}. ` +
+          'Click the bolt button to retry.'
+        : null;
     return m('.pf-tl-status-cell', [
       this.chip(child),
-      error !== undefined
+      actionError !== undefined
         ? m(
             '.pf-tl-row-error',
             {
-              title: error.message,
+              title: actionError.message,
               role: 'alert',
               'aria-live': 'polite',
             },
             [
               m(Icon, {icon: 'alert', size: 12}),
-              m('span.pf-tl-row-error__text', error.message),
+              m('span.pf-tl-row-error__text', actionError.message),
               m(
                 'button.pf-tl-row-error__close',
                 {
@@ -262,7 +296,20 @@ class TraceRow
               ),
             ],
           )
-        : null,
+        : prewarmFailedMessage !== null
+          ? m(
+              '.pf-tl-row-error.pf-tl-row-error--prewarm',
+              {
+                title: prewarmFailedMessage,
+                role: 'alert',
+                'aria-live': 'polite',
+              },
+              [
+                m(Icon, {icon: 'alert', size: 12}),
+                m('span.pf-tl-row-error__text', prewarmFailedMessage),
+              ],
+            )
+          : null,
       busy ? m(ProgressBar, {className: 'pf-tl-status-cell__progress'}) : null,
     ]);
   }
@@ -286,6 +333,12 @@ class TraceRow
         return m('span.pf-tl-state.pf-tl-state--prewarming', `prewarming :${child.port}`);
       case 'prewarmed':
         return m('span.pf-tl-state.pf-tl-state--prewarmed', `prewarmed :${child.port}`);
+      case 'prewarm-failed':
+        return m(
+          'span.pf-tl-state.pf-tl-state--prewarm-failed',
+          {title: child.prewarmError ?? 'prewarm failed'},
+          'prewarm failed',
+        );
       case 'crashed':
         return m('span.pf-tl-state.pf-tl-state--crashed', this.crashedLabel(child));
     }
