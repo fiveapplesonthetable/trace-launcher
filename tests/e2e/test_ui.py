@@ -37,6 +37,10 @@ from playwright.sync_api import Locator, Page, sync_playwright
 PROJECT = Path(__file__).resolve().parents[2]
 PORT = 9211
 BASE = f"http://127.0.0.1:{PORT}"
+# Second server used for the max-ports test: a tiny port pool we can exhaust.
+SMALL_PORT = 9212
+SMALL_BASE = f"http://127.0.0.1:{SMALL_PORT}"
+SMALL_TP_PORTS = 2  # only 2 trace_processor ports — a 3rd start must fail.
 SHOTS = Path(os.environ.get("RECORD_SHOTS_DIR", "/tmp/tl-e2e-shots"))
 SHOTS.mkdir(parents=True, exist_ok=True)
 
@@ -81,7 +85,11 @@ def trace_row(page: Page, name: str) -> Locator:
     )
 
 
-def start_server() -> subprocess.Popen[bytes]:
+def start_server(
+    http_port: int = PORT,
+    tp_port_base: int = 19000,
+    tp_port_count: int = 4096,
+) -> subprocess.Popen[bytes]:
     cmd = [
         str(PROJECT / "node_modules" / ".bin" / "tsx"),
         "server/index.ts",
@@ -90,16 +98,18 @@ def start_server() -> subprocess.Popen[bytes]:
         "--recursive-search",
         "--metadata-db", "fixtures/metadata.db",
         "--metadata-table", "traces",
-        "--port", str(PORT),
+        "--port", str(http_port),
+        "--tp-port-base", str(tp_port_base),
+        "--tp-port-count", str(tp_port_count),
     ]
     proc = subprocess.Popen(
         cmd, cwd=str(PROJECT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
-    if not wait_port(PORT):
+    if not wait_port(http_port):
         print("CHECKPOINT_FAIL: server did not come up", flush=True)
         proc.terminate()
         sys.exit(1)
-    print(f"server up on {BASE}", flush=True)
+    print(f"server up on http://127.0.0.1:{http_port}", flush=True)
     return proc
 
 
@@ -147,6 +157,24 @@ def run_scenarios(page: Page) -> None:
         boot.locator(".tl-state--live").count() == 1,
     )
     shot(page, "running-live")
+
+    # --- 4b. prewarm flow ---------------------------------------------------
+    # Click the secondary action (the bolt icon) on the already-live row. The
+    # state chip should flip to 'prewarming' within a couple of poll cycles.
+    # The fake trace_processor isn't a real RPC server, so the prewarmer will
+    # eventually time out and the chip becomes 'prewarm-failed' — but that
+    # *itself* exercises the failure-surfacing path, which is the point.
+    boot.locator(".tl-td--actions button").nth(1).dispatch_event("click")
+    page.wait_for_selector(
+        'tr.tl-tr--trace:has(.tl-name-cell__text[title="android-boot.pftrace"])'
+        ' .tl-state--prewarming',
+        timeout=10_000,
+    )
+    check(
+        "clicking prewarm transitions the row to 'prewarming'",
+        boot.locator(".tl-state--prewarming").count() == 1,
+    )
+    shot(page, "prewarming")
 
     # --- 5. a crashing trace_processor surfaces as crashed -----------------
     crash = trace_row(page, "broken-crash.pftrace")
@@ -316,8 +344,80 @@ def run_scenarios(page: Page) -> None:
     shot(page, "stopped")
 
 
+def run_max_ports_scenario(page: Page) -> None:
+    """Drive a server with only SMALL_TP_PORTS ports: a 3rd start must error.
+
+    Verifies that OutOfPortsError surfaces as an inline .tl-row-error on the
+    offending row (with a hint to free a port by stopping a running trace),
+    and that the dismiss button on that error chip clears it.
+    """
+    page.set_default_timeout(12_000)
+    page.goto(SMALL_BASE)
+    page.wait_for_selector("tr.tl-tr--trace")
+
+    # Sort by name so the row ordering is deterministic across runs.
+    rows = ["android-boot.pftrace", "chrome-startup.perfetto-trace"]
+    for name in rows:
+        trace_row(page, name).locator(".tl-td--actions button").first.dispatch_event("click")
+    # Wait until both reach 'live' so we know they've claimed both ports.
+    for name in rows:
+        page.wait_for_selector(
+            f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{name}"]) .tl-state--live',
+            timeout=15_000,
+        )
+
+    # Now exhaust the pool: start a third trace with no port left.
+    third_name = "scheduler.trace"
+    third = trace_row(page, third_name)
+    third.locator(".tl-td--actions button").first.dispatch_event("click")
+    # The inline error chip should appear on the offending row.
+    page.wait_for_selector(
+        f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{third_name}"]) .tl-row-error',
+        timeout=8_000,
+    )
+    text = third.locator(".tl-row-error__text").inner_text().strip().lower()
+    check(
+        "out-of-ports surfaces an inline row error with a stop-a-trace hint",
+        third.locator(".tl-row-error").count() == 1
+        and ("stop a running trace" in text or "free" in text),
+        f"row-error text: {text!r}",
+    )
+    shot(page, "max-ports-error")
+
+    # Dismiss the inline error and confirm the chip is gone.
+    third.locator(".tl-row-error__close").dispatch_event("click")
+    page.wait_for_timeout(400)
+    check(
+        "dismissing the inline error clears it",
+        third.locator(".tl-row-error").count() == 0,
+    )
+
+    # Free a port: stopping one of the live rows must let the next start succeed.
+    free_name = rows[0]
+    trace_row(page, free_name).locator(".tl-td--actions button").first.dispatch_event("click")
+    page.wait_for_timeout(800)
+    third.locator(".tl-td--actions button").first.dispatch_event("click")
+    page.wait_for_selector(
+        f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{third_name}"]) .tl-state--live',
+        timeout=15_000,
+    )
+    check(
+        "freeing a port lets the previously-blocked start succeed",
+        third.locator(".tl-state--live").count() == 1,
+    )
+    shot(page, "max-ports-recovered")
+
+
 def main() -> int:
+    # The main server uses the default port pool. The small-ports server runs
+    # on a separate HTTP port + a disjoint trace_processor port range so the
+    # two never collide.
     server = start_server()
+    small_server = start_server(
+        http_port=SMALL_PORT,
+        tp_port_base=19500,
+        tp_port_count=SMALL_TP_PORTS,
+    )
     # Headed by default (so the recorder captures a real screen); set
     # TL_E2E_HEADLESS=1 for a fast, display-less smoke run.
     headless = os.environ.get("TL_E2E_HEADLESS") == "1"
@@ -327,15 +427,17 @@ def main() -> int:
             page = browser.new_page(viewport={"width": 1366, "height": 900})
             try:
                 run_scenarios(page)
+                run_max_ports_scenario(page)
             finally:
                 page.wait_for_timeout(800)  # settle margin for the recording
                 browser.close()
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
+        for proc in (server, small_server):
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
     passed = sum(1 for _, ok, _ in RESULTS if ok)
     failed = [name for name, ok, _ in RESULTS if not ok]

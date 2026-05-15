@@ -15,6 +15,7 @@ import {
   type LaunchOptions,
 } from './config';
 import {MetadataError, MetadataStore} from './metadata';
+import {Prewarmer} from './prewarmer';
 import {ProcessManager} from './process_manager';
 
 // Entry point: parse the CLI, wire the catalog + metadata + process manager
@@ -85,12 +86,14 @@ function main(argv: readonly string[]): void {
     fail(err instanceof Error ? err.message : String(err));
   }
 
+  const prewarmer = new Prewarmer();
   const processes = new ProcessManager(
     options.tpBinary,
     catalog,
     options.bind,
     options.tpPortBase,
     options.tpPortCount,
+    prewarmer,
   );
 
   const config: ServerConfig = {
@@ -143,6 +146,7 @@ function main(argv: readonly string[]): void {
     shuttingDown = true;
     const stopped = processes.stopAll();
     metadata?.close();
+    void prewarmer.close();
     log(`\n${signal} — stopped ${stopped} trace processor(s), exiting.`);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();

@@ -33,6 +33,11 @@ export function portIsOpen(
   });
 }
 
+/** Thrown by the allocator when every port in the range is taken. */
+export class OutOfPortsError extends Error {
+  readonly code = 'OUT_OF_PORTS';
+}
+
 /**
  * Hands out free TCP ports from a fixed `[base, base + count)` range,
  * round-robin so a freed port is not immediately reused. Callers pass the set
@@ -56,8 +61,9 @@ export class PortAllocator {
       if (await portIsFree(this.host, port)) return port;
     }
     const last = this.base + this.count - 1;
-    throw new Error(
-      `no free trace_processor port in ${this.host}:${this.base}-${last}`,
+    throw new OutOfPortsError(
+      `no free trace_processor port in ${this.host}:${this.base}-${last} — ` +
+        'stop a running trace to free one',
     );
   }
 }

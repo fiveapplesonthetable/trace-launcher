@@ -8,6 +8,7 @@ import type {
 } from '../shared/types';
 import {Catalog, CatalogError} from './catalog';
 import {MetadataError, type MetadataStore} from './metadata';
+import {OutOfPortsError} from './ports';
 import type {ProcessManager} from './process_manager';
 import {systemStats} from './system';
 
@@ -87,6 +88,29 @@ export function createApiRouter(deps: ApiDeps) {
     }
   });
 
+  // Prewarm a trace: ensure the child is live, then load ui.perfetto.dev
+  // against it in a headless browser so the trace_processor caches the UI's
+  // initial query burst. Returns once the prewarm is scheduled; the snapshot
+  // surfaces 'prewarming' / 'prewarmed' / 'prewarm-failed' state as it runs.
+  router.post('/prewarm', async (req, res) => {
+    const trace = readTrace(req.body);
+    if (trace === null) {
+      res.status(400).json({error: 'request body must be {"trace": "<path>"}'});
+      return;
+    }
+    try {
+      await processes.ensurePrewarm(trace);
+      res.json({ok: true});
+    } catch (err) {
+      sendError(res, err, {ok: false});
+    }
+  });
+
+  router.post('/prewarm-batch', async (req, res) => {
+    const scheduled = await processes.prewarmMany(readTraces(req.body));
+    res.json({scheduled});
+  });
+
   // Stop a live child, or dismiss a crashed one.
   router.post('/stop', (req, res) => {
     const trace = readTrace(req.body);
@@ -131,9 +155,16 @@ function sendError(
   err: unknown,
   extra: Record<string, unknown> = {},
 ): void {
-  const badRequest = err instanceof CatalogError || err instanceof MetadataError;
   const message = err instanceof Error ? err.message : String(err);
-  res.status(badRequest ? 400 : 500).json({...extra, error: message});
+  let status = 500;
+  let code: string | undefined;
+  if (err instanceof CatalogError || err instanceof MetadataError) {
+    status = 400;
+  } else if (err instanceof OutOfPortsError) {
+    status = 409;
+    code = err.code;
+  }
+  res.status(status).json({...extra, error: message, ...(code ? {code} : {})});
 }
 
 /** Parses and sanitises a POST /state request body. */

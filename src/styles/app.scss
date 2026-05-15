@@ -797,8 +797,74 @@ code {
   &--starting {
     color: var(--pf-color-warning);
   }
+  &--prewarming {
+    color: var(--pf-color-accent);
+  }
+  &--prewarmed {
+    color: var(--pf-color-success);
+    // Faint bolt indicator at the leading edge, matching the prewarm button.
+    &::before {
+      content: '⚡';
+      margin-right: 3px;
+      font-size: 10px;
+      opacity: 0.85;
+    }
+  }
   &--crashed {
     color: var(--pf-color-danger);
+  }
+}
+
+.tl-row-error {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 5px;
+  max-width: 260px;
+  border-radius: var(--tl-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--pf-color-danger) 50%, transparent);
+  background: color-mix(in srgb, var(--pf-color-danger) 12%, transparent);
+  color: var(--pf-color-danger);
+  font-size: 11px;
+  line-height: 1.3;
+
+  .tl-icon {
+    flex: 0 0 auto;
+  }
+}
+
+.tl-row-error__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-row-error__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--tl-radius-sm);
+  cursor: pointer;
+  opacity: 0.7;
+
+  &:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--pf-color-danger) 18%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--pf-color-danger);
+    outline-offset: 1px;
   }
 }
 

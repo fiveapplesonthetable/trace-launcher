@@ -22,6 +22,10 @@ server-rendered HTML.
 | --- | --- |
 | ![Catalog view](docs/screenshot-catalog.png) | ![Active traces](docs/screenshot-running.png) |
 
+| Prewarming a row | Out-of-ports error, shown inline |
+| --- | --- |
+| ![Prewarming a trace](docs/screenshot-prewarming.png) | ![Out-of-ports inline error](docs/screenshot-max-ports.png) |
+
 | Metadata filter | Filter by runtime state |
 | --- | --- |
 | ![Metadata filter](docs/screenshot-filter.png) | ![Status filter](docs/screenshot-status-filter.png) |
@@ -34,22 +38,30 @@ server-rendered HTML.
 
 - **One grid for everything** — traces and their live state share a single
   catalog table. The leading column carries a fixed-width action slot (Start,
-  Cancel, Stop, Retry, Open in Perfetto) so columns line up no matter what
-  state a row is in. There is no separate "running" panel to keep in sync.
+  Cancel, Stop, Retry, Prewarm, Open in Perfetto) so columns line up no matter
+  what state a row is in. There is no separate "running" panel to keep in sync.
 - **Browse & search** — walk the trace directory, or search by name (within
   the current directory, or recursively under the root with
   `--recursive-search`).
 - **Filter by anything, including state** — structured filters on path, size,
   every column of the optional metadata DB, and on the live runtime status
-  (`idle`, `live`, `starting`, `crashed`). Metadata filters compile to
-  parameterised SQL; status filters apply client-side. Search and filters
-  cover every state uniformly.
+  (`idle`, `live`, `starting`, `prewarming`, `prewarmed`, `crashed`). Metadata
+  filters compile to parameterised SQL; status filters apply client-side.
+  Search and filters cover every state uniformly.
 - **Launch & track** — start a `trace_processor_shell server` per trace, open
   it in ui.perfetto.dev, and stop it again. Starts are idempotent, so a
   double-click never spawns two servers.
-- **Honest status** — every child is shown as `starting`, `live`, or
-  `crashed` (with its exit code / signal) right inside its catalog row. A
-  crash is never silent; retry or dismiss it inline.
+- **Prewarm** — second click on a row loads ui.perfetto.dev against the trace
+  in a headless Chromium so the UI's initial query burst gets cached by the
+  trace_processor. When you later open the deep link yourself, the viewer is
+  ready instantly. There's a single bolt-icon button per row and a
+  "Prewarm all shown" batch action that respects the active filter.
+- **Honest status** — every child is shown as `starting`, `live`,
+  `prewarming`, `prewarmed`, or `crashed` (with its exit code / signal) right
+  inside its catalog row. A crash is never silent; retry or dismiss it inline.
+- **Inline action errors** — if a start fails (e.g. the port pool is
+  exhausted) the row shows a one-line error with a hint to free a port, plus
+  an × dismiss. The error is per-row; the rest of the grid keeps working.
 - **Host stats** — host memory and disk usage, plus a roll-up of running
   processors and their total RSS.
 - **Configurable columns** — choose which columns the catalog shows: file
@@ -147,9 +159,10 @@ npm run seed         # rebuild fixtures/metadata.db
 
 `tests/e2e/test_ui.py` boots the real server against the fixtures, drives a
 headed Chrome via Playwright, and asserts against the DOM. It covers the start
-→ live path, a crashing trace_processor, a hanging one, double-click
-idempotency, the column picker, a metadata SQL filter, directory navigation,
-and the theme toggle.
+→ live path, the prewarm flow, a crashing trace_processor, a hanging one,
+double-click idempotency, the column picker, a metadata SQL filter, directory
+navigation, the theme toggle, and a second server with a 2-port pool that
+exercises the out-of-ports inline error and its dismissal.
 
 ```sh
 python3 -m venv .e2e-venv && .e2e-venv/bin/pip install playwright \

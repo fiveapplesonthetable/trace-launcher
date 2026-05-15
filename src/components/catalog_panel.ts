@@ -6,7 +6,7 @@ import type {
   RunningChild,
   TraceEntry,
 } from '../../shared/types';
-import {store} from '../core/store';
+import {rowStateFor, store} from '../core/store';
 import {formatRelativeTime, formatSize} from '../base/format';
 import {Button} from '../widgets/button';
 import {Icon} from '../widgets/icon';
@@ -170,7 +170,7 @@ class TraceRow
         ]),
       ),
       ...columns.map((col) => m('td.tl-td', this.cell(trace, col))),
-      m('td.tl-td.tl-td--status', this.statusCell(child, busy)),
+      m('td.tl-td.tl-td--status', this.statusCell(trace, child, busy)),
     ]);
   }
 
@@ -203,24 +203,44 @@ class TraceRow
   }
 
   private statusCell(
+    trace: TraceEntry,
     child: RunningChild | undefined,
     busy: boolean,
   ): m.Children {
+    const error = store.errorFor(trace.key);
     return m('.tl-status-cell', [
       this.chip(child),
+      error !== undefined
+        ? m('.tl-row-error', {title: error.message}, [
+            m(Icon, {icon: 'alert', size: 12}),
+            m('span.tl-row-error__text', error.message),
+            m(
+              'button.tl-row-error__close',
+              {
+                title: 'Dismiss',
+                onclick: () => store.clearError(trace.key),
+              },
+              m(Icon, {icon: 'close', size: 11}),
+            ),
+          ])
+        : null,
       busy ? m(ProgressBar, {className: 'tl-status-cell__progress'}) : null,
     ]);
   }
 
   private chip(child: RunningChild | undefined): m.Children {
-    if (child === undefined) {
-      return m('span.tl-state.tl-state--idle', 'idle');
-    }
-    switch (child.status) {
+    const state = rowStateFor(child);
+    switch (state) {
+      case 'idle':
+        return m('span.tl-state.tl-state--idle', 'idle');
       case 'live':
-        return m('span.tl-state.tl-state--live', `live :${child.port}`);
+        return m('span.tl-state.tl-state--live', `live :${child!.port}`);
       case 'starting':
         return m('span.tl-state.tl-state--starting', 'starting');
+      case 'prewarming':
+        return m('span.tl-state.tl-state--prewarming', `prewarming :${child!.port}`);
+      case 'prewarmed':
+        return m('span.tl-state.tl-state--prewarmed', `prewarmed :${child!.port}`);
       case 'crashed':
         return m('span.tl-state.tl-state--crashed', 'crashed');
     }
@@ -231,10 +251,22 @@ class TraceRow
     child: RunningChild | undefined,
     pending: boolean,
   ): m.Children {
-    // The action cell holds up to two icon-only buttons in a fixed-width
-    // slot, so column alignment is preserved row-to-row regardless of state.
-    // Live and crashed rows get a primary + secondary pair; idle and starting
-    // rows get just one.
+    // Two icon-only buttons in a fixed-width slot, so column alignment is
+    // preserved row-to-row no matter the state. Button 1 is a Start/Stop
+    // toggle. Button 2 evolves through Prewarm -> (spinner) -> Open as the
+    // background prewarm completes, or stays as Dismiss for crashed rows.
+    return [
+      this.primaryButton(trace, child, pending),
+      this.secondaryButton(trace, child, pending),
+    ];
+  }
+
+  /** Start, Stop, Cancel, or Retry — whichever the current state allows. */
+  private primaryButton(
+    trace: TraceEntry,
+    child: RunningChild | undefined,
+    pending: boolean,
+  ): m.Children {
     if (child === undefined) {
       return m(Button, {
         icon: 'play',
@@ -246,58 +278,77 @@ class TraceRow
         onclick: () => void store.open(trace.key),
       });
     }
-    if (child.status === 'starting') {
+    if (child.status === 'crashed') {
       return m(Button, {
-        icon: 'stop',
-        intent: 'danger',
+        icon: 'refresh',
+        intent: 'primary',
         variant: 'outlined',
         compact: true,
-        title: 'Cancel',
+        title: 'Retry',
         loading: pending,
+        onclick: () => void store.open(trace.key),
+      });
+    }
+    return m(Button, {
+      icon: 'stop',
+      intent: 'danger',
+      variant: 'outlined',
+      compact: true,
+      title: child.status === 'starting' ? 'Cancel' : 'Stop',
+      loading: pending,
+      onclick: () => void store.stop(trace.key),
+    });
+  }
+
+  /** Prewarm, Open (after prewarmed), Dismiss (for crashed), or a spinner. */
+  private secondaryButton(
+    trace: TraceEntry,
+    child: RunningChild | undefined,
+    pending: boolean,
+  ): m.Children {
+    if (child !== undefined && child.status === 'crashed') {
+      return m(Button, {
+        icon: 'close',
+        variant: 'minimal',
+        compact: true,
+        title: 'Dismiss',
         onclick: () => void store.stop(trace.key),
       });
     }
-    if (child.status === 'crashed') {
-      return [
-        m(Button, {
-          icon: 'refresh',
-          intent: 'primary',
-          variant: 'outlined',
-          compact: true,
-          title: 'Retry',
-          loading: pending,
-          onclick: () => void store.open(trace.key),
-        }),
-        m(Button, {
-          icon: 'close',
-          variant: 'minimal',
-          compact: true,
-          title: 'Dismiss',
-          onclick: () => void store.stop(trace.key),
-        }),
-      ];
-    }
-    // live
-    return [
-      m(Button, {
+    if (child !== undefined && child.prewarm === 'prewarmed') {
+      return m(Button, {
         icon: 'external',
         intent: 'primary',
         variant: 'outlined',
         compact: true,
-        title: 'Open in Perfetto',
+        title: 'Open in Perfetto (prewarmed)',
         href: child.perfettoUrl,
         target: '_blank',
-      }),
-      m(Button, {
-        icon: 'stop',
-        intent: 'danger',
+      });
+    }
+    if (child !== undefined && child.prewarm === 'prewarming') {
+      return m(Button, {
+        icon: 'bolt',
+        intent: 'primary',
         variant: 'outlined',
         compact: true,
-        title: 'Stop',
-        loading: pending,
-        onclick: () => void store.stop(trace.key),
-      }),
-    ];
+        title: 'Prewarming…',
+        loading: true,
+      });
+    }
+    const failedHint =
+      child?.prewarm === 'prewarm-failed' && child.prewarmError !== undefined
+        ? `Prewarm failed: ${child.prewarmError}. Click to retry.`
+        : 'Prewarm — preload ui.perfetto.dev against this trace';
+    return m(Button, {
+      icon: 'bolt',
+      intent: 'primary',
+      variant: 'outlined',
+      compact: true,
+      title: failedHint,
+      loading: pending && child?.prewarm !== 'prewarming',
+      onclick: () => void store.prewarm(trace.key),
+    });
   }
 }
 
@@ -372,6 +423,17 @@ export class CatalogPanel implements m.ClassComponent {
           compact: true,
           disabled: traceCount === 0,
           onclick: () => void store.startVisible(),
+        }),
+        m(Button, {
+          label: 'Prewarm all shown',
+          icon: 'bolt',
+          variant: 'outlined',
+          compact: true,
+          disabled: traceCount === 0,
+          title:
+            'Preload ui.perfetto.dev against every trace in this view so ' +
+            'opening them later is instant',
+          onclick: () => void store.prewarmVisible(),
         }),
         m(Button, {
           label: 'Stop all shown',

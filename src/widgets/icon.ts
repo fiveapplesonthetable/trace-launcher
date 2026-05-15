@@ -36,6 +36,7 @@ const PATHS = {
   arrowUp: 'M7 14l5-5 5 5z',
   arrowDown: 'M7 10l5 5 5-5z',
   plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+  bolt: 'M7 2v11h3v9l7-12h-4l3-8H7z',
 } as const;
 
 export type IconName = keyof typeof PATHS;

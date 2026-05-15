@@ -10,30 +10,42 @@ import type {
 
 const BASE = '/api';
 
+/** Error thrown by api methods; carries the server's stable `code`, if any. */
+export class ApiError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${BASE}${path}`, init);
   } catch {
-    throw new Error('cannot reach the trace-launcher server');
+    throw new ApiError('cannot reach the trace-launcher server');
   }
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(extractError(payload, response.status));
+    const {message, code} = extractError(payload, response.status);
+    throw new ApiError(message, code);
   }
   return payload as T;
 }
 
-function extractError(payload: unknown, status: number): string {
-  if (
-    payload !== null &&
-    typeof payload === 'object' &&
-    'error' in payload &&
-    typeof (payload as {error: unknown}).error === 'string'
-  ) {
-    return (payload as {error: string}).error;
+function extractError(
+  payload: unknown,
+  status: number,
+): {message: string; code?: string} {
+  if (payload !== null && typeof payload === 'object') {
+    const obj = payload as {error?: unknown; code?: unknown};
+    if (typeof obj.error === 'string') {
+      return {
+        message: obj.error,
+        ...(typeof obj.code === 'string' ? {code: obj.code} : {}),
+      };
+    }
   }
-  return `request failed (${status})`;
+  return {message: `request failed (${status})`};
 }
 
 function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -62,6 +74,12 @@ export const api = {
   },
   stop(trace: string): Promise<void> {
     return postJson<unknown>('/stop', {trace}).then(discard);
+  },
+  prewarm(trace: string): Promise<void> {
+    return postJson<unknown>('/prewarm', {trace}).then(discard);
+  },
+  prewarmBatch(traces: readonly string[]): Promise<void> {
+    return postJson<unknown>('/prewarm-batch', {traces}).then(discard);
   },
   startBatch(traces: readonly string[]): Promise<void> {
     return postJson<unknown>('/start-batch', {traces}).then(discard);

@@ -8,7 +8,32 @@ import type {
   RunningChild,
   TraceEntry,
 } from '../../shared/types';
-import {api} from './api';
+import {api, ApiError} from './api';
+
+/** The visible runtime state of a catalog row, after rolling in prewarm. */
+export type RowState =
+  | 'idle'
+  | 'starting'
+  | 'live'
+  | 'prewarming'
+  | 'prewarmed'
+  | 'crashed';
+
+/** Per-trace error surfaced inline in the row (out-of-ports, validation, …). */
+export interface RowError {
+  readonly message: string;
+  readonly code?: string;
+}
+
+/** Folds child status + prewarm into the single row state the UI displays. */
+export function rowStateFor(child: RunningChild | undefined): RowState {
+  if (child === undefined) return 'idle';
+  if (child.status === 'starting') return 'starting';
+  if (child.status === 'crashed') return 'crashed';
+  if (child.prewarm === 'prewarming') return 'prewarming';
+  if (child.prewarm === 'prewarmed') return 'prewarmed';
+  return 'live';
+}
 
 // The single source of truth for the SPA. Components read its public fields and
 // call its action methods; it owns the API client, the poll loop, the catalog
@@ -85,8 +110,10 @@ class AppStore {
   sort: SortState = {column: 'name', direction: 'asc'};
   theme: Theme = readTheme();
 
-  /** Trace keys with an in-flight start/stop request — drives inline progress. */
+  /** Trace keys with an in-flight start/stop/prewarm request. */
   readonly pending = new Set<string>();
+  /** Per-trace inline errors (out-of-ports, validation, …); cleared on retry. */
+  readonly errors = new Map<string, RowError>();
 
   /** Visible column ids; null means "use each column's default". */
   private visibleColumns: Set<string> | null = readVisibleColumns();
@@ -198,6 +225,10 @@ class AppStore {
     return this.withPending([key], () => api.stop(key));
   }
 
+  prewarm(key: string): Promise<void> {
+    return this.withPending([key], () => api.prewarm(key));
+  }
+
   startVisible(): Promise<void> {
     const keys = this.visibleTraceKeys();
     return this.withPending(keys, () => api.startBatch(keys));
@@ -208,9 +239,23 @@ class AppStore {
     return this.withPending(keys, () => api.stopBatch(keys));
   }
 
+  prewarmVisible(): Promise<void> {
+    const keys = this.visibleTraceKeys();
+    return this.withPending(keys, () => api.prewarmBatch(keys));
+  }
+
   stopAll(): Promise<void> {
     const keys = (this.state?.running ?? []).map((c) => c.key);
     return this.withPending(keys, () => api.stopAll());
+  }
+
+  /** Per-row inline error (or undefined). */
+  errorFor(key: string): RowError | undefined {
+    return this.errors.get(key);
+  }
+
+  clearError(key: string): void {
+    if (this.errors.delete(key)) m.redraw();
   }
 
   suggest(column: string, prefix: string): Promise<readonly string[]> {
@@ -255,11 +300,11 @@ class AppStore {
     const statusFilters = this.filters.filter((f) => f.column === 'status');
     if (statusFilters.length === 0) return all;
     return all.filter((trace) => {
-      const status = this.runningFor(trace.key)?.status ?? 'idle';
+      const state = rowStateFor(this.runningFor(trace.key));
       return statusFilters.every((filter) => {
         const target = filter.value.trim().toLowerCase();
-        if (filter.op === 'equals') return status === target;
-        return status.includes(target);
+        if (filter.op === 'equals') return state === target;
+        return state.includes(target);
       });
     });
   }
@@ -300,12 +345,26 @@ class AppStore {
     keys: readonly string[],
     action: () => Promise<void>,
   ): Promise<void> {
-    for (const key of keys) this.pending.add(key);
+    for (const key of keys) {
+      this.pending.add(key);
+      // Retrying clears the previous inline error before we know the outcome.
+      this.errors.delete(key);
+    }
     m.redraw();
     try {
       await action();
     } catch (err) {
-      this.error = messageOf(err);
+      const message = messageOf(err);
+      const code = err instanceof ApiError ? err.code : undefined;
+      if (keys.length === 1) {
+        const key = keys[0]!;
+        this.errors.set(
+          key,
+          code !== undefined ? {message, code} : {message},
+        );
+      } else {
+        this.error = message;
+      }
     } finally {
       for (const key of keys) this.pending.delete(key);
       await this.refresh();

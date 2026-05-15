@@ -2,10 +2,12 @@ import {spawn} from 'node:child_process';
 import type {ChildProcess} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import {setTimeout as sleep} from 'node:timers/promises';
 
-import type {ChildExit, RunningChild} from '../shared/types';
+import type {ChildExit, PrewarmStatus, RunningChild} from '../shared/types';
 import type {Catalog} from './catalog';
 import {PortAllocator, portIsOpen} from './ports';
+import type {Prewarmer} from './prewarmer';
 import {processRss} from './system';
 
 // The process manager owns every trace_processor_shell child: it spawns them,
@@ -16,6 +18,8 @@ import {processRss} from './system';
 const CRASH_TTL_MS = 60_000;
 /** Grace period between SIGTERM and SIGKILL when stopping a child. */
 const KILL_GRACE_MS = 5_000;
+/** How long the prewarm worker will wait for the trace_processor port to open. */
+const PREWARM_PORT_WAIT_MS = 30_000;
 
 interface Child {
   readonly trace: string;
@@ -27,6 +31,9 @@ interface Child {
   stopping: boolean;
   /** Set once the process exits; null while it is still running. */
   exit: ChildExit | null;
+  /** Prewarm task state; null until a prewarm has been requested. */
+  prewarm: PrewarmStatus | null;
+  prewarmError: string | null;
 }
 
 /** Deep link that opens a child's RPC port in ui.perfetto.dev. */
@@ -48,6 +55,7 @@ export class ProcessManager {
     private readonly bind: string,
     portBase: number,
     portCount: number,
+    private readonly prewarmer: Prewarmer | undefined = undefined,
   ) {
     this.allocator = new PortAllocator(bind, portBase, portCount);
   }
@@ -83,6 +91,8 @@ export class ProcessManager {
       startedMs: Date.now(),
       stopping: false,
       exit: null,
+      prewarm: null,
+      prewarmError: null,
     };
     proc.on('error', () => {
       // Spawn-time failure (e.g. the binary vanished): record it as a crash so
@@ -100,6 +110,47 @@ export class ProcessManager {
       child.exit = {code, signal, exitedMs: Date.now()};
     });
     this.children.set(trace, child);
+  }
+
+  /**
+   * Ensures a child is live for `traceKey` and triggers a prewarm in the
+   * background. Idempotent: re-invoking it while a prewarm is already
+   * 'prewarming' or 'prewarmed' is a no-op. The promise resolves once the
+   * prewarm has been *scheduled*, not once it has finished — callers poll
+   * the snapshot to observe the transition to 'prewarmed' / 'prewarm-failed'.
+   */
+  async ensurePrewarm(traceKey: string): Promise<void> {
+    if (this.prewarmer === undefined) {
+      throw new Error('prewarm is not configured on this server');
+    }
+    await this.ensureChild(traceKey);
+    const trace = this.catalog.validate(traceKey);
+    const child = this.children.get(trace);
+    if (child === undefined || child.exit !== null) {
+      throw new Error(`no live child for ${trace}`);
+    }
+    if (child.prewarm === 'prewarming' || child.prewarm === 'prewarmed') {
+      return; // already in flight or done
+    }
+    child.prewarm = 'prewarming';
+    child.prewarmError = null;
+    // Fire-and-forget; the child's prewarm field updates as the task runs and
+    // any error surfaces through the snapshot.
+    void this.runPrewarm(child);
+  }
+
+  /** Schedules a prewarm for every key; rejected keys are silently skipped. */
+  async prewarmMany(keys: readonly string[]): Promise<number> {
+    let scheduled = 0;
+    for (const key of keys) {
+      try {
+        await this.ensurePrewarm(key);
+        scheduled++;
+      } catch {
+        // Best-effort; one bad trace must not abort the rest.
+      }
+    }
+    return scheduled;
   }
 
   /**
@@ -147,7 +198,7 @@ export class ProcessManager {
   private describe(child: Child, portOpen: boolean): RunningChild {
     const status: RunningChild['status'] =
       child.exit !== null ? 'crashed' : portOpen ? 'live' : 'starting';
-    const base: RunningChild = {
+    let described: RunningChild = {
       key: child.trace,
       rel: this.catalog.rel(child.trace),
       name: path.basename(child.trace),
@@ -159,7 +210,42 @@ export class ProcessManager {
       traceSize: fileSize(child.trace),
       perfettoUrl: perfettoUrl(child.port),
     };
-    return child.exit !== null ? {...base, exit: child.exit} : base;
+    if (child.prewarm !== null) {
+      described = {...described, prewarm: child.prewarm};
+      if (child.prewarmError !== null) {
+        described = {...described, prewarmError: child.prewarmError};
+      }
+    }
+    if (child.exit !== null) {
+      described = {...described, exit: child.exit};
+    }
+    return described;
+  }
+
+  /** Background task: wait for the port, hand off to the Prewarmer. */
+  private async runPrewarm(child: Child): Promise<void> {
+    if (this.prewarmer === undefined) return;
+    try {
+      const deadline = Date.now() + PREWARM_PORT_WAIT_MS;
+      while (Date.now() < deadline) {
+        if (child.exit !== null || child.stopping) return;
+        if (await portIsOpen(this.bind, child.port)) break;
+        await sleep(400);
+      }
+      if (child.exit !== null || child.stopping) return;
+      if (!(await portIsOpen(this.bind, child.port))) {
+        throw new Error('trace_processor did not come up in time');
+      }
+      await this.prewarmer.warm(child.port);
+      if (child.exit === null && !child.stopping) {
+        child.prewarm = 'prewarmed';
+        child.prewarmError = null;
+      }
+    } catch (err) {
+      if (child.exit !== null || child.stopping) return;
+      child.prewarm = 'prewarm-failed';
+      child.prewarmError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   private livePorts(): number[] {

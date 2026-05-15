@@ -39,7 +39,14 @@ const STATUS_COLUMN: CatalogColumn = {
   filterable: true,
   defaultVisible: false,
 };
-const STATUS_VALUES: readonly string[] = ['idle', 'live', 'starting', 'crashed'];
+const STATUS_VALUES: readonly string[] = [
+  'idle',
+  'starting',
+  'live',
+  'prewarming',
+  'prewarmed',
+  'crashed',
+];
 
 function opsFor(column: CatalogColumn): readonly FilterOp[] {
   if (column.id === 'status') return STATUS_OPS;
