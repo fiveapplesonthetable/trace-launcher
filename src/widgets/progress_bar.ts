@@ -21,14 +21,14 @@ export class ProgressBar implements m.ClassComponent<ProgressBarAttrs> {
     const intent: ProgressIntent =
       attrs.intent ?? (value >= 90 ? 'danger' : value >= 75 ? 'warn' : 'normal');
     return m(
-      '.tl-progress',
+      '.pf-tl-progress',
       {
         class: classNames(
-          indeterminate && 'tl-progress--indeterminate',
+          indeterminate && 'pf-tl-progress--indeterminate',
           attrs.className,
         ),
       },
-      m(`.tl-progress__fill.tl-progress__fill--${intent}`, {
+      m(`.pf-tl-progress__fill.pf-tl-progress__fill--${intent}`, {
         style: indeterminate ? undefined : {width: `${value}%`},
       }),
     );

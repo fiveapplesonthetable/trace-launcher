@@ -22,10 +22,10 @@ export class MiddleEllipsis implements m.ClassComponent<MiddleEllipsisAttrs> {
     const head = text.slice(0, text.length - keep);
     const tail = text.slice(text.length - keep);
     return m(
-      '.tl-mid-ellipsis',
+      '.pf-tl-mid-ellipsis',
       {class: classNames(attrs.className), title: text},
-      m('span.tl-mid-ellipsis__head', head),
-      tail !== '' ? m('span.tl-mid-ellipsis__tail', tail) : null,
+      m('span.pf-tl-mid-ellipsis__head', head),
+      tail !== '' ? m('span.pf-tl-mid-ellipsis__tail', tail) : null,
     );
   }
 }

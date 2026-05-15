@@ -21,11 +21,11 @@ export class ColumnPicker implements m.ClassComponent {
         label: 'Columns',
         icon: 'columns',
         align: 'right',
-        panelClass: 'tl-colpicker',
+        panelClass: 'pf-tl-colpicker',
       },
       [
-        m('.tl-colpicker__group', [
-          m('.tl-colpicker__group-label', 'File'),
+        m('.pf-tl-colpicker__group', [
+          m('.pf-tl-colpicker__group-label', 'File'),
           fileColumns.map((col) =>
             m(Checkbox, {
               key: col.id,
@@ -36,8 +36,8 @@ export class ColumnPicker implements m.ClassComponent {
           ),
         ]),
         metaColumns.length > 0
-          ? m('.tl-colpicker__group', [
-              m('.tl-colpicker__group-label', 'Metadata'),
+          ? m('.pf-tl-colpicker__group', [
+              m('.pf-tl-colpicker__group-label', 'Metadata'),
               metaColumns.map((col) =>
                 m(Checkbox, {
                   key: col.id,

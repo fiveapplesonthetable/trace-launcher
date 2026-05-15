@@ -51,7 +51,7 @@ export class Icon implements m.ClassComponent<IconAttrs> {
   view({attrs}: m.CVnode<IconAttrs>): m.Children {
     const size = attrs.size ?? 18;
     return m(
-      'svg.tl-icon',
+      'svg.pf-tl-icon',
       {
         class: attrs.className,
         width: size,

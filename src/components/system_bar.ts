@@ -17,14 +17,14 @@ interface StatCardAttrs {
 
 class StatCard implements m.ClassComponent<StatCardAttrs> {
   view({attrs}: m.CVnode<StatCardAttrs>): m.Children {
-    return m('.tl-stat', [
-      m('.tl-stat__head', [
+    return m('.pf-tl-stat', [
+      m('.pf-tl-stat__head', [
         m(Icon, {icon: attrs.icon, size: 15}),
-        m('span.tl-stat__label', attrs.label),
+        m('span.pf-tl-stat__label', attrs.label),
       ]),
-      m('.tl-stat__value', attrs.value),
+      m('.pf-tl-stat__value', attrs.value),
       attrs.meter !== undefined ? m(ProgressBar, {value: attrs.meter}) : null,
-      attrs.hint !== undefined ? m('.tl-stat__hint', attrs.hint) : null,
+      attrs.hint !== undefined ? m('.pf-tl-stat__hint', attrs.hint) : null,
     ]);
   }
 }
@@ -39,7 +39,7 @@ export class SystemBar implements m.ClassComponent {
     const crashed = running.length - active.length;
     const totalRss = active.reduce((sum, c) => sum + c.rssBytes, 0);
 
-    return m('.tl-systembar', [
+    return m('.pf-tl-systembar', [
       m(StatCard, {
         icon: 'memory',
         label: 'Host memory',

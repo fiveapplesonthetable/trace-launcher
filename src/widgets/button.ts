@@ -56,13 +56,13 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
     // aria-label whenever there is no visible label.
     const ariaLabel = label === undefined ? title : undefined;
     const classes = classNames(
-      'tl-button',
-      `tl-button--${variant}`,
-      `tl-button--${intent}`,
-      compact && 'tl-button--compact',
-      active && 'tl-button--active',
-      inert && 'tl-button--inert',
-      icon !== undefined && label === undefined && 'tl-button--icon-only',
+      'pf-tl-button',
+      `pf-tl-button--${variant}`,
+      `pf-tl-button--${intent}`,
+      compact && 'pf-tl-button--compact',
+      active && 'pf-tl-button--active',
+      inert && 'pf-tl-button--inert',
+      icon !== undefined && label === undefined && 'pf-tl-button--icon-only',
       className,
     );
 
@@ -72,13 +72,13 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
         : icon !== undefined
           ? m(Icon, {icon, size: iconSize})
           : null,
-      label !== undefined ? m('span.tl-button__label', label) : null,
+      label !== undefined ? m('span.pf-tl-button__label', label) : null,
       rightIcon !== undefined ? m(Icon, {icon: rightIcon, size: iconSize}) : null,
     ];
 
     if (href !== undefined && !inert) {
       return m(
-        'a.tl-button-link',
+        'a.pf-tl-button-link',
         {
           class: classes,
           href,

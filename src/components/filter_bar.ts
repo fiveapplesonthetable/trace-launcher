@@ -23,7 +23,7 @@ const TEXT_OPS: readonly FilterOp[] = ['contains', 'equals'];
 const NUMBER_OPS: readonly FilterOp[] = ['equals', 'gte', 'lte', 'gt', 'lt'];
 const STATUS_OPS: readonly FilterOp[] = ['equals'];
 const SUGGEST_DEBOUNCE_MS = 140;
-const SUGGESTIONS_LIST_ID = 'tl-filter-suggestions';
+const SUGGESTIONS_LIST_ID = 'pf-tl-filter-suggestions';
 
 /**
  * Synthetic column for filtering by runtime state. Not part of the server's
@@ -72,8 +72,12 @@ class FilterEditor implements m.ClassComponent {
 
   view(): m.Children {
     const filterable = filterableColumns();
-    // STATUS_COLUMN is always present, so filterable is never empty.
-    const selected = filterable.find((c) => c.id === this.column) ?? filterable[0]!;
+    // STATUS_COLUMN is always prepended by filterableColumns(), so the array
+    // is never empty — but make the invariant a runtime guard rather than a
+    // non-null assertion so any future refactor that breaks the invariant
+    // fails loudly.
+    const selected = filterable.find((c) => c.id === this.column) ?? filterable[0];
+    if (selected === undefined) return null;
     if (this.column !== selected.id) {
       this.column = selected.id;
       this.op = opsFor(selected)[0] ?? 'contains';
@@ -82,9 +86,9 @@ class FilterEditor implements m.ClassComponent {
     const ops = opsFor(selected);
     const suggestible = this.isSuggestible(selected);
 
-    return m('.tl-filter-editor', [
+    return m('.pf-tl-filter-editor', [
       m(
-        'select.tl-select',
+        'select.pf-tl-select',
         {
           'aria-label': 'Filter column',
           value: this.column,
@@ -94,7 +98,7 @@ class FilterEditor implements m.ClassComponent {
         filterable.map((col) => m('option', {value: col.id}, col.label)),
       ),
       m(
-        'select.tl-select.tl-filter-editor__op',
+        'select.pf-tl-select.pf-tl-filter-editor__op',
         {
           'aria-label': 'Filter operator',
           value: this.op,
@@ -104,7 +108,7 @@ class FilterEditor implements m.ClassComponent {
         },
         ops.map((op) => m('option', {value: op}, OP_LABELS[op])),
       ),
-      m('input.tl-input.tl-filter-editor__value', {
+      m('input.pf-tl-input.pf-tl-filter-editor__value', {
         type: 'text',
         placeholder: selected.kind === 'number' ? 'value…' : 'text…',
         value: this.value,
@@ -194,14 +198,14 @@ export class FilterControl implements m.ClassComponent {
         label: 'Filters',
         icon: 'filter',
         badge: filters.length,
-        panelClass: 'tl-filter-panel',
+        panelClass: 'pf-tl-filter-panel',
       },
       [
-        m('.tl-filter-panel__title', 'Add a filter'),
+        m('.pf-tl-filter-panel__title', 'Add a filter'),
         m(FilterEditor),
         filters.length > 0
-          ? m('.tl-filter-panel__active', [
-              m('.tl-filter-panel__active-head', [
+          ? m('.pf-tl-filter-panel__active', [
+              m('.pf-tl-filter-panel__active-head', [
                 m('span', 'Active filters'),
                 m(Button, {
                   label: 'Clear all',
@@ -211,8 +215,8 @@ export class FilterControl implements m.ClassComponent {
                 }),
               ]),
               filters.map((filter, index) =>
-                m('.tl-filter-row', [
-                  m('span.tl-filter-row__text', [
+                m('.pf-tl-filter-row', [
+                  m('span.pf-tl-filter-row__text', [
                     m('strong', columnLabel(filter.column)),
                     ` ${OP_LABELS[filter.op]} `,
                     m('code', filter.value),
@@ -239,21 +243,22 @@ export class FilterChips implements m.ClassComponent {
     const filters = store.filters;
     if (filters.length === 0) return null;
     return m(
-      '.tl-filter-chips',
+      '.pf-tl-filter-chips',
       filters.map((filter, index) =>
         m(
-          '.tl-chip-filter',
+          '.pf-tl-chip-filter',
           {key: `${index}:${filter.column}:${filter.op}:${filter.value}`},
           [
-            m('span.tl-chip-filter__text', [
+            m('span.pf-tl-chip-filter__text', [
               m('strong', columnLabel(filter.column)),
               ` ${OP_LABELS[filter.op]} `,
               filter.value,
             ]),
             m(
-              'button.tl-chip-filter__remove',
+              'button.pf-tl-chip-filter__remove',
               {
                 title: 'Remove filter',
+                'aria-label': `Remove filter ${columnLabel(filter.column)} ${filter.op} ${filter.value}`,
                 onclick: () => store.removeFilter(index),
               },
               m(Icon, {icon: 'close', size: 12}),

@@ -12,17 +12,17 @@ class Footer implements m.ClassComponent {
   view(): m.Children {
     const config = store.state?.config;
     if (config === undefined) return null;
-    return m('footer.tl-footer', [
-      m('span.tl-footer__item', [m('em', 'tp-binary'), config.tpBinary]),
-      m('span.tl-footer__item', [
+    return m('footer.pf-tl-footer', [
+      m('span.pf-tl-footer__item', [m('em', 'tp-binary'), config.tpBinary]),
+      m('span.pf-tl-footer__item', [
         m('em', 'backend ports'),
         `${config.tpPortRange[0]}–${config.tpPortRange[1]}`,
       ]),
       config.metadataEnabled
-        ? m('span.tl-footer__item', [m('em', 'metadata'), 'enabled'])
+        ? m('span.pf-tl-footer__item', [m('em', 'metadata'), 'enabled'])
         : null,
-      m('span.tl-footer__spacer'),
-      m('span.tl-footer__item', 'auto-refreshing'),
+      m('span.pf-tl-footer__spacer'),
+      m('span.pf-tl-footer__item', 'auto-refreshing'),
     ]);
   }
 }
@@ -30,18 +30,22 @@ class Footer implements m.ClassComponent {
 export class App implements m.ClassComponent {
   view(): m.Children {
     const loading = store.initialLoad && store.state === null;
-    return m('.tl-app', [
+    return m('.pf-tl-app', [
       m(TopBar),
-      m('main.tl-shell', [
+      m('main.pf-tl-shell', [
         store.error !== null
-          ? m('.tl-error', [
-              m(Icon, {icon: 'alert', size: 16}),
-              m('span', store.error),
-            ])
+          ? m(
+              '.pf-tl-error',
+              {role: 'alert', 'aria-live': 'assertive'},
+              [
+                m(Icon, {icon: 'alert', size: 16}),
+                m('span', store.error),
+              ],
+            )
           : null,
         loading
-          ? m('.tl-splash', [
-              m('span.tl-spinner.tl-spinner--lg'),
+          ? m('.pf-tl-splash', [
+              m('span.pf-tl-spinner.pf-tl-spinner--lg'),
               m('p', 'Loading catalog…'),
             ])
           : [m(SystemBar), m(CatalogPanel)],

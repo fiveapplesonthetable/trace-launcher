@@ -41,7 +41,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 SMALL_PORT = 9212
 SMALL_BASE = f"http://127.0.0.1:{SMALL_PORT}"
 SMALL_TP_PORTS = 2  # only 2 trace_processor ports — a 3rd start must fail.
-SHOTS = Path(os.environ.get("RECORD_SHOTS_DIR", "/tmp/tl-e2e-shots"))
+SHOTS = Path(os.environ.get("RECORD_SHOTS_DIR", "/tmp/pf-tl-e2e-shots"))
 SHOTS.mkdir(parents=True, exist_ok=True)
 
 # Collected (name, ok, detail) tuples; the process exits non-zero if any failed.
@@ -81,7 +81,7 @@ def wait_port(port: int, timeout: float = 25.0) -> bool:
 def trace_row(page: Page, name: str) -> Locator:
     """The catalog table row for a trace, located by its full-name title."""
     return page.locator(
-        f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{name}"])'
+        f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{name}"])'
     )
 
 
@@ -118,17 +118,17 @@ def run_scenarios(page: Page) -> None:
 
     # --- 1. catalog renders -------------------------------------------------
     page.goto(BASE)
-    page.wait_for_selector("table.tl-table")
-    page.wait_for_selector("tr.tl-tr--trace")
-    row_count = page.locator("tr.tl-tr--trace").count()
+    page.wait_for_selector("table.pf-tl-table")
+    page.wait_for_selector("tr.pf-tl-tr--trace")
+    row_count = page.locator("tr.pf-tl-tr--trace").count()
     check("catalog renders trace rows", row_count >= 5, f"{row_count} rows")
     shot(page, "catalog")
 
     # --- 2. in-directory search filters ------------------------------------
-    search = page.locator(".tl-search__input")
+    search = page.locator(".pf-tl-search__input")
     search.fill("boot")
     page.wait_for_timeout(700)
-    after = page.locator("tr.tl-tr--trace").count()
+    after = page.locator("tr.pf-tl-tr--trace").count()
     check(
         "search narrows the catalog",
         after == 1 and trace_row(page, "android-boot.pftrace").count() == 1,
@@ -146,15 +146,15 @@ def run_scenarios(page: Page) -> None:
 
     # --- 4. start a trace -> live ------------------------------------------
     boot = trace_row(page, "android-boot.pftrace")
-    boot.locator(".tl-td--actions button").first.dispatch_event("click")
+    boot.locator(".pf-tl-td--actions button").first.dispatch_event("click")
     page.wait_for_selector(
-        'tr.tl-tr--trace:has(.tl-name-cell__text[title="android-boot.pftrace"])'
-        ' .tl-state--live',
+        'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="android-boot.pftrace"])'
+        ' .pf-tl-state--live',
         timeout=15_000,
     )
     check(
         "starting a trace yields the live state",
-        boot.locator(".tl-state--live").count() == 1,
+        boot.locator(".pf-tl-state--live").count() == 1,
     )
     shot(page, "running-live")
 
@@ -164,50 +164,50 @@ def run_scenarios(page: Page) -> None:
     # The fake trace_processor isn't a real RPC server, so the prewarmer will
     # eventually time out and the chip becomes 'prewarm-failed' — but that
     # *itself* exercises the failure-surfacing path, which is the point.
-    boot.locator(".tl-td--actions button").nth(1).dispatch_event("click")
+    boot.locator(".pf-tl-td--actions button").nth(1).dispatch_event("click")
     page.wait_for_selector(
-        'tr.tl-tr--trace:has(.tl-name-cell__text[title="android-boot.pftrace"])'
-        ' .tl-state--prewarming',
+        'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="android-boot.pftrace"])'
+        ' .pf-tl-state--prewarming',
         timeout=10_000,
     )
     check(
         "clicking prewarm transitions the row to 'prewarming'",
-        boot.locator(".tl-state--prewarming").count() == 1,
+        boot.locator(".pf-tl-state--prewarming").count() == 1,
     )
     shot(page, "prewarming")
 
     # --- 5. a crashing trace_processor surfaces as crashed -----------------
     crash = trace_row(page, "broken-crash.pftrace")
-    crash.locator(".tl-td--actions button").first.dispatch_event("click")
+    crash.locator(".pf-tl-td--actions button").first.dispatch_event("click")
     page.wait_for_selector(
-        'tr.tl-tr--trace:has(.tl-name-cell__text[title="broken-crash.pftrace"])'
-        ' .tl-state--crashed',
+        'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="broken-crash.pftrace"])'
+        ' .pf-tl-state--crashed',
         timeout=15_000,
     )
     check(
         "a crashing trace_processor is shown as crashed",
-        crash.locator(".tl-state--crashed").count() == 1,
+        crash.locator(".pf-tl-state--crashed").count() == 1,
     )
     shot(page, "crashed")
 
     # --- 6. a hanging trace_processor stays "starting" ---------------------
     hang = trace_row(page, "slow-hang.pftrace")
-    hang.locator(".tl-td--actions button").first.dispatch_event("click")
+    hang.locator(".pf-tl-td--actions button").first.dispatch_event("click")
     page.wait_for_selector(
-        'tr.tl-tr--trace:has(.tl-name-cell__text[title="slow-hang.pftrace"])'
-        ' .tl-state--starting',
+        'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="slow-hang.pftrace"])'
+        ' .pf-tl-state--starting',
         timeout=10_000,
     )
     page.wait_for_timeout(3500)  # it must NOT flip to live
     check(
         "a hanging trace_processor stays 'starting'",
-        hang.locator(".tl-state--starting").count() == 1,
+        hang.locator(".pf-tl-state--starting").count() == 1,
     )
     shot(page, "hang")
 
     # --- 7. double-clicking Start is idempotent ----------------------------
     sched = trace_row(page, "scheduler.trace")
-    sched_btn = sched.locator(".tl-td--actions button").first
+    sched_btn = sched.locator(".pf-tl-td--actions button").first
     # dispatch_event bypasses Playwright's actionability checks and goes
     # straight to the button's onclick handler, so we can fire two presses
     # back-to-back without racing the inert-on-pending guard. That proves the
@@ -218,7 +218,7 @@ def run_scenarios(page: Page) -> None:
     page.wait_for_timeout(3000)
     # Exactly one of the three "active" states for the scheduler row.
     active = sched.locator(
-        ".tl-state--live, .tl-state--starting, .tl-state--crashed"
+        ".pf-tl-state--live, .pf-tl-state--starting, .pf-tl-state--crashed"
     ).count()
     check(
         "double-click Start spawns only one child",
@@ -228,27 +228,27 @@ def run_scenarios(page: Page) -> None:
 
     # --- 8. the Columns menu toggles a metadata column ---------------------
     page.get_by_role("button", name="Columns").click()
-    page.wait_for_selector(".tl-dropdown__panel")
-    page.locator('.tl-checkbox:has-text("device")').click()
+    page.wait_for_selector(".pf-tl-dropdown__panel")
+    page.locator('.pf-tl-checkbox:has-text("device")').click()
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
-    device_header = page.locator('th.tl-th:has-text("device")').count() == 1
+    device_header = page.locator('th.pf-tl-th:has-text("device")').count() == 1
     check("Columns menu adds the metadata 'device' column", device_header)
     shot(page, "columns")
 
     # --- 9. the Filters editor adds a metadata SQL filter ------------------
     page.get_by_role("button", name="Filters").click()
-    page.wait_for_selector(".tl-filter-panel")
-    selects = page.locator(".tl-filter-panel .tl-select")
+    page.wait_for_selector(".pf-tl-filter-panel")
+    selects = page.locator(".pf-tl-filter-panel .pf-tl-select")
     selects.nth(0).select_option("meta:device")
     selects.nth(1).select_option("contains")
-    page.locator(".tl-filter-editor__value").fill("pixel-9")
+    page.locator(".pf-tl-filter-editor__value").fill("pixel-9")
     page.get_by_role("button", name="Add").click()
     page.wait_for_timeout(800)
     page.keyboard.press("Escape")
     page.wait_for_timeout(400)
-    chip = page.locator(".tl-chip-filter").count() == 1
-    filtered = page.locator("tr.tl-tr--trace").count()
+    chip = page.locator(".pf-tl-chip-filter").count() == 1
+    filtered = page.locator("tr.pf-tl-tr--trace").count()
     check(
         "a metadata filter is applied and shows a chip",
         chip and 1 <= filtered <= 4,
@@ -260,12 +260,12 @@ def run_scenarios(page: Page) -> None:
     # The filter scoped the catalog to two traces; only those should be
     # started. (slow-hang is already running from test 6, so just one new
     # live trace lands — chrome-startup.)
-    active_states = ".tl-state--live, .tl-state--starting, .tl-state--crashed"
+    active_states = ".pf-tl-state--live, .pf-tl-state--starting, .pf-tl-state--crashed"
     running_before = page.locator(active_states).count()
     page.get_by_role("button", name="Start all shown").click()
     page.wait_for_selector(
-        'tr.tl-tr--trace:has(.tl-name-cell__text[title="chrome-startup.perfetto-trace"])'
-        ' .tl-state--live',
+        'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="chrome-startup.perfetto-trace"])'
+        ' .pf-tl-state--live',
         timeout=12_000,
     )
     page.wait_for_timeout(800)
@@ -274,49 +274,49 @@ def run_scenarios(page: Page) -> None:
         "Start all shown only spawns traces in the filtered view",
         running_after == running_before + 1
         and trace_row(page, "chrome-startup.perfetto-trace")
-            .locator(".tl-state--live").count() == 1,
+            .locator(".pf-tl-state--live").count() == 1,
         f"active rows: {running_before} -> {running_after}",
     )
     shot(page, "bulk-filtered")
 
     # remove the filter again
-    page.locator(".tl-chip-filter__remove").first.click()
+    page.locator(".pf-tl-chip-filter__remove").first.click()
     page.wait_for_timeout(700)
     check(
         "removing the filter restores the catalog",
-        page.locator(".tl-chip-filter").count() == 0,
+        page.locator(".pf-tl-chip-filter").count() == 0,
     )
 
     # --- 9c. status filter narrows the catalog by runtime state ------------
     page.get_by_role("button", name="Filters").click()
-    page.wait_for_selector(".tl-filter-panel")
-    selects = page.locator(".tl-filter-panel .tl-select")
+    page.wait_for_selector(".pf-tl-filter-panel")
+    selects = page.locator(".pf-tl-filter-panel .pf-tl-select")
     selects.nth(0).select_option("status")
-    page.locator(".tl-filter-editor__value").fill("crashed")
+    page.locator(".pf-tl-filter-editor__value").fill("crashed")
     page.get_by_role("button", name="Add").click()
     page.wait_for_timeout(500)
     page.keyboard.press("Escape")
     page.wait_for_timeout(400)
-    crashed_rows = page.locator("tr.tl-tr--trace").count()
-    crashed_chips = page.locator("tr.tl-tr--trace .tl-state--crashed").count()
+    crashed_rows = page.locator("tr.pf-tl-tr--trace").count()
+    crashed_chips = page.locator("tr.pf-tl-tr--trace .pf-tl-state--crashed").count()
     check(
         "status filter narrows the catalog to crashed rows",
         crashed_rows == 1 and crashed_chips == 1,
         f"{crashed_rows} row(s), {crashed_chips} crashed",
     )
     shot(page, "status-filter")
-    page.locator(".tl-chip-filter__remove").first.click()
+    page.locator(".pf-tl-chip-filter__remove").first.click()
     page.wait_for_timeout(500)
 
     # --- 10. directory navigation ------------------------------------------
-    page.locator('tr.tl-tr--dir:has-text("nested")').click()
+    page.locator('tr.pf-tl-tr--dir:has-text("nested")').click()
     page.wait_for_timeout(700)
     in_nested = (
-        page.locator(".tl-crumb--current").inner_text().strip() == "nested"
+        page.locator(".pf-tl-crumb--current").inner_text().strip() == "nested"
         and trace_row(page, "game-frame.pftrace").count() == 1
     )
     check("navigating into a sub-directory works", in_nested)
-    page.locator('.tl-crumb:has-text("root")').click()
+    page.locator('.pf-tl-crumb:has-text("root")').click()
     page.wait_for_timeout(700)
 
     # --- 11. theme toggle ---------------------------------------------------
@@ -334,7 +334,7 @@ def run_scenarios(page: Page) -> None:
     page.get_by_role("button", name="Stop all shown").click()
     page.wait_for_timeout(1500)
     remaining = page.locator(
-        ".tl-state--live, .tl-state--starting, .tl-state--crashed"
+        ".pf-tl-state--live, .pf-tl-state--starting, .pf-tl-state--crashed"
     ).count()
     check(
         "Stop all shown reaps every running child",
@@ -347,63 +347,63 @@ def run_scenarios(page: Page) -> None:
 def run_max_ports_scenario(page: Page) -> None:
     """Drive a server with only SMALL_TP_PORTS ports: a 3rd start must error.
 
-    Verifies that OutOfPortsError surfaces as an inline .tl-row-error on the
+    Verifies that OutOfPortsError surfaces as an inline .pf-tl-row-error on the
     offending row (with a hint to free a port by stopping a running trace),
     and that the dismiss button on that error chip clears it.
     """
     page.set_default_timeout(12_000)
     page.goto(SMALL_BASE)
-    page.wait_for_selector("tr.tl-tr--trace")
+    page.wait_for_selector("tr.pf-tl-tr--trace")
 
     # Sort by name so the row ordering is deterministic across runs.
     rows = ["android-boot.pftrace", "chrome-startup.perfetto-trace"]
     for name in rows:
-        trace_row(page, name).locator(".tl-td--actions button").first.dispatch_event("click")
+        trace_row(page, name).locator(".pf-tl-td--actions button").first.dispatch_event("click")
     # Wait until both reach 'live' so we know they've claimed both ports.
     for name in rows:
         page.wait_for_selector(
-            f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{name}"]) .tl-state--live',
+            f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{name}"]) .pf-tl-state--live',
             timeout=15_000,
         )
 
     # Now exhaust the pool: start a third trace with no port left.
     third_name = "scheduler.trace"
     third = trace_row(page, third_name)
-    third.locator(".tl-td--actions button").first.dispatch_event("click")
+    third.locator(".pf-tl-td--actions button").first.dispatch_event("click")
     # The inline error chip should appear on the offending row.
     page.wait_for_selector(
-        f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{third_name}"]) .tl-row-error',
+        f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{third_name}"]) .pf-tl-row-error',
         timeout=8_000,
     )
-    text = third.locator(".tl-row-error__text").inner_text().strip().lower()
+    text = third.locator(".pf-tl-row-error__text").inner_text().strip().lower()
     check(
         "out-of-ports surfaces an inline row error with a stop-a-trace hint",
-        third.locator(".tl-row-error").count() == 1
+        third.locator(".pf-tl-row-error").count() == 1
         and ("stop a running trace" in text or "free" in text),
         f"row-error text: {text!r}",
     )
     shot(page, "max-ports-error")
 
     # Dismiss the inline error and confirm the chip is gone.
-    third.locator(".tl-row-error__close").dispatch_event("click")
+    third.locator(".pf-tl-row-error__close").dispatch_event("click")
     page.wait_for_timeout(400)
     check(
         "dismissing the inline error clears it",
-        third.locator(".tl-row-error").count() == 0,
+        third.locator(".pf-tl-row-error").count() == 0,
     )
 
     # Free a port: stopping one of the live rows must let the next start succeed.
     free_name = rows[0]
-    trace_row(page, free_name).locator(".tl-td--actions button").first.dispatch_event("click")
+    trace_row(page, free_name).locator(".pf-tl-td--actions button").first.dispatch_event("click")
     page.wait_for_timeout(800)
-    third.locator(".tl-td--actions button").first.dispatch_event("click")
+    third.locator(".pf-tl-td--actions button").first.dispatch_event("click")
     page.wait_for_selector(
-        f'tr.tl-tr--trace:has(.tl-name-cell__text[title="{third_name}"]) .tl-state--live',
+        f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{third_name}"]) .pf-tl-state--live',
         timeout=15_000,
     )
     check(
         "freeing a port lets the previously-blocked start succeed",
-        third.locator(".tl-state--live").count() == 1,
+        third.locator(".pf-tl-state--live").count() == 1,
     )
     shot(page, "max-ports-recovered")
 

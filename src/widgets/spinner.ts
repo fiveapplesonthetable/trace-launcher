@@ -12,7 +12,7 @@ export interface SpinnerAttrs {
 export class Spinner implements m.ClassComponent<SpinnerAttrs> {
   view({attrs}: m.CVnode<SpinnerAttrs>): m.Children {
     const size = attrs.size ?? 14;
-    return m('span.tl-spinner', {
+    return m('span.pf-tl-spinner', {
       class: classNames(attrs.className),
       style: {width: `${size}px`, height: `${size}px`},
     });

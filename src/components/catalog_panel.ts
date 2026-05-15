@@ -40,7 +40,7 @@ class Breadcrumb implements m.ClassComponent {
     const segments = catalog.dir === '' ? [] : catalog.dir.split('/');
     const crumbs: m.Child[] = [
       m(
-        'button.tl-crumb',
+        'button.pf-tl-crumb',
         {disabled: catalog.dir === '', onclick: () => store.navigateTo('')},
         m(Icon, {icon: 'home', size: 14}),
         'root',
@@ -51,19 +51,19 @@ class Breadcrumb implements m.ClassComponent {
       acc = acc === '' ? segment : `${acc}/${segment}`;
       const target = acc;
       crumbs.push(
-        m(Icon, {icon: 'chevronRight', size: 13, className: 'tl-crumb__sep'}),
+        m(Icon, {icon: 'chevronRight', size: 13, className: 'pf-tl-crumb__sep'}),
       );
       crumbs.push(
         i === segments.length - 1
-          ? m('span.tl-crumb.tl-crumb--current', segment)
+          ? m('span.pf-tl-crumb.pf-tl-crumb--current', segment)
           : m(
-              'button.tl-crumb',
+              'button.pf-tl-crumb',
               {onclick: () => store.navigateTo(target)},
               segment,
             ),
       );
     });
-    return m('.tl-breadcrumb', crumbs);
+    return m('.pf-tl-breadcrumb', crumbs);
   }
 }
 
@@ -87,12 +87,12 @@ class DirInfo implements m.ClassComponent {
     );
     facts.push(`${formatSize(catalog.totalSize)} total`);
 
-    return m('.tl-dirinfo', [
-      m('.tl-dirinfo__path', {title: catalog.absPath}, [
+    return m('.pf-tl-dirinfo', [
+      m('.pf-tl-dirinfo__path', {title: catalog.absPath}, [
         m(Icon, {icon: 'folder', size: 13}),
         m(MiddleEllipsis, {text: catalog.absPath, endChars: 22}),
       ]),
-      m('.tl-dirinfo__facts', facts.join('  ·  ')),
+      m('.pf-tl-dirinfo__facts', facts.join('  ·  ')),
     ]);
   }
 }
@@ -104,35 +104,43 @@ class DirRow
     attrs,
   }: m.CVnode<{dir: DirEntry; columnCount: number}>): m.Children {
     const {dir, columnCount} = attrs;
+    const activate = (): void => store.navigateTo(dir.rel);
     return m(
-      'tr.tl-tr.tl-tr--dir',
+      'tr.pf-tl-tr.pf-tl-tr--dir',
       {
+        // Keyboard-activatable folder row: a button would be ideal but tables
+        // need <tr>s, so we ape button semantics with role + aria-label.
+        role: 'button',
+        'aria-label': `Open folder ${dir.name}`,
         tabindex: 0,
-        onclick: () => store.navigateTo(dir.rel),
+        onclick: activate,
         onkeydown: (e: KeyboardEvent) => {
-          if (e.key === 'Enter' || e.key === ' ') store.navigateTo(dir.rel);
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+          }
         },
       },
       [
         m(
-          'td.tl-td.tl-td--actions',
+          'td.pf-tl-td.pf-tl-td--actions',
           m(
-            '.tl-actions',
-            m(Icon, {icon: 'chevronRight', size: 16, className: 'tl-chevron'}),
+            '.pf-tl-actions',
+            m(Icon, {icon: 'chevronRight', size: 16, className: 'pf-tl-chevron'}),
           ),
         ),
         m(
-          'td.tl-td.tl-td--name',
-          m('.tl-name-cell', [
+          'td.pf-tl-td.pf-tl-td--name',
+          m('.pf-tl-name-cell', [
             m(
-              '.tl-row-icon.tl-row-icon--dir',
+              '.pf-tl-row-icon.pf-tl-row-icon--dir',
               m(Icon, {icon: 'folder', size: 17}),
             ),
-            m('span.tl-name-cell__text', dir.name),
+            m('span.pf-tl-name-cell__text', dir.name),
           ]),
         ),
-        ...range(columnCount).map(() => m('td.tl-td.tl-td--dim', '—')),
-        m('td.tl-td.tl-td--dim', ''),
+        ...range(columnCount).map(() => m('td.pf-tl-td.pf-tl-td--dim', '—')),
+        m('td.pf-tl-td.pf-tl-td--dim', ''),
       ],
     );
   }
@@ -153,24 +161,24 @@ class TraceRow
     const pending = store.isPending(trace.key);
     const busy = pending || child?.status === 'starting';
 
-    return m(`tr.tl-tr.tl-tr--trace${busy ? '.tl-tr--busy' : ''}`, [
+    return m(`tr.pf-tl-tr.pf-tl-tr--trace${busy ? '.pf-tl-tr--busy' : ''}`, [
       m(
-        'td.tl-td.tl-td--actions',
-        m('.tl-actions', this.action(trace, child, pending)),
+        'td.pf-tl-td.pf-tl-td--actions',
+        m('.pf-tl-actions', this.action(trace, child, pending)),
       ),
       m(
-        'td.tl-td.tl-td--name',
-        m('.tl-name-cell', [
-          m('.tl-row-icon', m(Icon, {icon: 'file', size: 16})),
+        'td.pf-tl-td.pf-tl-td--name',
+        m('.pf-tl-name-cell', [
+          m('.pf-tl-row-icon', m(Icon, {icon: 'file', size: 16})),
           m(MiddleEllipsis, {
             text: trace.name,
             endChars: 14,
-            className: 'tl-name-cell__text',
+            className: 'pf-tl-name-cell__text',
           }),
         ]),
       ),
-      ...columns.map((col) => m('td.tl-td', this.cell(trace, col))),
-      m('td.tl-td.tl-td--status', this.statusCell(trace, child, busy)),
+      ...columns.map((col) => m('td.pf-tl-td', this.cell(trace, col))),
+      m('td.pf-tl-td.pf-tl-td--status', this.statusCell(trace, child, busy)),
     ]);
   }
 
@@ -179,11 +187,11 @@ class TraceRow
       return m(MiddleEllipsis, {
         text: trace.rel,
         endChars: 16,
-        className: 'tl-cell-mono',
+        className: 'pf-tl-cell-mono',
       });
     }
     if (col.id === 'size') {
-      return m('span.tl-cell-num', formatSize(trace.size));
+      return m('span.pf-tl-cell-num', formatSize(trace.size));
     }
     if (col.id === 'modified') {
       return m(
@@ -195,7 +203,7 @@ class TraceRow
     if (col.id.startsWith('meta:')) {
       const value = trace.metadata?.[col.id.slice('meta:'.length)];
       return m(
-        col.kind === 'number' ? 'span.tl-cell-num' : 'span',
+        col.kind === 'number' ? 'span.pf-tl-cell-num' : 'span',
         metaText(value),
       );
     }
@@ -208,42 +216,69 @@ class TraceRow
     busy: boolean,
   ): m.Children {
     const error = store.errorFor(trace.key);
-    return m('.tl-status-cell', [
+    return m('.pf-tl-status-cell', [
       this.chip(child),
       error !== undefined
-        ? m('.tl-row-error', {title: error.message}, [
-            m(Icon, {icon: 'alert', size: 12}),
-            m('span.tl-row-error__text', error.message),
-            m(
-              'button.tl-row-error__close',
-              {
-                title: 'Dismiss',
-                onclick: () => store.clearError(trace.key),
-              },
-              m(Icon, {icon: 'close', size: 11}),
-            ),
-          ])
+        ? m(
+            '.pf-tl-row-error',
+            {
+              title: error.message,
+              role: 'alert',
+              'aria-live': 'polite',
+            },
+            [
+              m(Icon, {icon: 'alert', size: 12}),
+              m('span.pf-tl-row-error__text', error.message),
+              m(
+                'button.pf-tl-row-error__close',
+                {
+                  title: 'Dismiss',
+                  'aria-label': 'Dismiss error',
+                  onclick: () => store.clearError(trace.key),
+                },
+                m(Icon, {icon: 'close', size: 11}),
+              ),
+            ],
+          )
         : null,
-      busy ? m(ProgressBar, {className: 'tl-status-cell__progress'}) : null,
+      busy ? m(ProgressBar, {className: 'pf-tl-status-cell__progress'}) : null,
     ]);
   }
 
   private chip(child: RunningChild | undefined): m.Children {
+    // The "no child" and "child without a port to display" cases are
+    // handled first so the rest of the switch can reference child.port
+    // without a non-null assertion.
+    if (child === undefined) return m('span.pf-tl-state.pf-tl-state--idle', 'idle');
     const state = rowStateFor(child);
     switch (state) {
       case 'idle':
-        return m('span.tl-state.tl-state--idle', 'idle');
+        // rowStateFor only returns 'idle' for child === undefined, which we
+        // handled above. This case is unreachable but keeps the switch total.
+        return m('span.pf-tl-state.pf-tl-state--idle', 'idle');
       case 'live':
-        return m('span.tl-state.tl-state--live', `live :${child!.port}`);
+        return m('span.pf-tl-state.pf-tl-state--live', `live :${child.port}`);
       case 'starting':
-        return m('span.tl-state.tl-state--starting', 'starting');
+        return m('span.pf-tl-state.pf-tl-state--starting', 'starting');
       case 'prewarming':
-        return m('span.tl-state.tl-state--prewarming', `prewarming :${child!.port}`);
+        return m('span.pf-tl-state.pf-tl-state--prewarming', `prewarming :${child.port}`);
       case 'prewarmed':
-        return m('span.tl-state.tl-state--prewarmed', `prewarmed :${child!.port}`);
+        return m('span.pf-tl-state.pf-tl-state--prewarmed', `prewarmed :${child.port}`);
       case 'crashed':
-        return m('span.tl-state.tl-state--crashed', 'crashed');
+        return m('span.pf-tl-state.pf-tl-state--crashed', this.crashedLabel(child));
     }
+  }
+
+  /** Human label for a crashed child — surfaces the signal if it OOM'd. */
+  private crashedLabel(child: RunningChild): string {
+    if (child.exit?.signal === 'SIGKILL') return 'killed';
+    if (child.exit?.signal !== null && child.exit?.signal !== undefined) {
+      return `crashed (${child.exit.signal})`;
+    }
+    if (child.exit?.code !== null && child.exit?.code !== undefined && child.exit.code !== 0) {
+      return `crashed (exit ${child.exit.code})`;
+    }
+    return 'crashed';
   }
 
   private action(
@@ -364,14 +399,14 @@ export class CatalogPanel implements m.ClassComponent {
     const rendered = traces.slice(0, RENDER_CAP);
     const hasRows = dirs.length > 0 || traces.length > 0;
 
-    return m('section.tl-panel', [
+    return m('section.pf-tl-panel', [
       this.head(traces.length),
       this.toolbar(),
       m(FilterChips),
       m(Breadcrumb),
       m(DirInfo),
       catalog?.truncated === true
-        ? m('.tl-note', [
+        ? m('.pf-tl-note', [
             m(Icon, {icon: 'alert', size: 14}),
             `Showing the server's first ${catalog.maxResults} matches — ` +
               'narrow the search or add filters to see the rest.',
@@ -379,8 +414,8 @@ export class CatalogPanel implements m.ClassComponent {
         : null,
       hasRows
         ? m(
-            '.tl-table-wrap',
-            m('table.tl-table', [
+            '.pf-tl-table-wrap',
+            m('table.pf-tl-table', [
               this.header(columns),
               m('tbody', [
                 ...dirs.map((dir) =>
@@ -401,7 +436,7 @@ export class CatalogPanel implements m.ClassComponent {
           : null,
       traces.length > rendered.length
         ? m(
-            '.tl-note',
+            '.pf-tl-note',
             `Showing ${rendered.length} of ${traces.length} matches — ` +
               'refine the search or filters to narrow the list.',
           )
@@ -410,12 +445,12 @@ export class CatalogPanel implements m.ClassComponent {
   }
 
   private head(traceCount: number): m.Children {
-    return m('.tl-panel__head', [
-      m('.tl-panel__title', [
+    return m('.pf-tl-panel__head', [
+      m('.pf-tl-panel__title', [
         m('span', 'Catalog'),
-        m('span.tl-badge', store.state !== null ? String(traceCount) : '…'),
+        m('span.pf-tl-badge', store.state !== null ? String(traceCount) : '…'),
       ]),
-      m('.tl-panel__head-actions', [
+      m('.pf-tl-panel__head-actions', [
         m(Button, {
           label: 'Start all shown',
           icon: 'play',
@@ -449,10 +484,10 @@ export class CatalogPanel implements m.ClassComponent {
 
   private toolbar(): m.Children {
     const recursive = store.state?.config.recursiveSearch ?? false;
-    return m('.tl-toolbar', [
-      m('.tl-search', [
-        m(Icon, {icon: 'search', size: 16, className: 'tl-search__icon'}),
-        m('input.tl-search__input', {
+    return m('.pf-tl-toolbar', [
+      m('.pf-tl-search', [
+        m(Icon, {icon: 'search', size: 16, className: 'pf-tl-search__icon'}),
+        m('input.pf-tl-search__input', {
           type: 'search',
           spellcheck: false,
           placeholder: recursive
@@ -466,20 +501,32 @@ export class CatalogPanel implements m.ClassComponent {
           },
         }),
       ]),
-      m('.tl-toolbar__tools', [m(FilterControl), m(ColumnPicker)]),
+      m('.pf-tl-toolbar__tools', [m(FilterControl), m(ColumnPicker)]),
     ]);
   }
 
   private header(columns: readonly CatalogColumn[]): m.Children {
     const sortHeader = (id: string, label: string): m.Children => {
       const active = store.sort.column === id;
+      const ariaSort = active
+        ? store.sort.direction === 'asc' ? 'ascending' : 'descending'
+        : 'none';
+      const activate = (): void => store.setSort(id);
       return m(
-        'th.tl-th.tl-th--sortable',
+        'th.pf-tl-th.pf-tl-th--sortable',
         {
-          class: active ? 'tl-th--active' : undefined,
-          onclick: () => store.setSort(id),
+          class: active ? 'pf-tl-th--active' : undefined,
+          'aria-sort': ariaSort,
+          tabindex: 0,
+          onclick: activate,
+          onkeydown: (e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              activate();
+            }
+          },
         },
-        m('.tl-th__inner', [
+        m('.pf-tl-th__inner', [
           m('span', label),
           active
             ? m(Icon, {
@@ -493,25 +540,25 @@ export class CatalogPanel implements m.ClassComponent {
     return m(
       'thead',
       m('tr', [
-        m('th.tl-th.tl-th--actions', ''),
+        m('th.pf-tl-th.pf-tl-th--actions', {'aria-label': 'Actions'}, ''),
         sortHeader('name', 'Name'),
         ...columns.map((col) => sortHeader(col.id, col.label)),
-        m('th.tl-th', 'Status'),
+        m('th.pf-tl-th', 'Status'),
       ]),
     );
   }
 
   private empty(): m.Children {
     const searching = store.query !== '' || store.filters.length > 0;
-    return m('.tl-empty', [
-      m(Icon, {icon: 'search', size: 26, className: 'tl-empty__icon'}),
+    return m('.pf-tl-empty', [
+      m(Icon, {icon: 'search', size: 26, className: 'pf-tl-empty__icon'}),
       m(
-        'p.tl-empty__title',
+        'p.pf-tl-empty__title',
         searching ? 'No traces match' : 'No traces in this directory',
       ),
       searching
         ? m(
-            'p.tl-empty__hint',
+            'p.pf-tl-empty__hint',
             'Try a different search term or remove a filter.',
           )
         : null,

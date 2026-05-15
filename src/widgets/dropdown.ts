@@ -33,7 +33,7 @@ export class Dropdown implements m.ClassComponent<DropdownAttrs> {
 
   view({attrs, children}: m.CVnode<DropdownAttrs>): m.Children {
     const badge = attrs.badge ?? 0;
-    return m('.tl-dropdown', [
+    return m('.pf-tl-dropdown', [
       m(Button, {
         label: badge > 0 ? `${attrs.label} · ${badge}` : attrs.label,
         icon: attrs.icon,
@@ -45,12 +45,12 @@ export class Dropdown implements m.ClassComponent<DropdownAttrs> {
       }),
       this.open
         ? [
-            m('.tl-dropdown__backdrop', {onclick: () => this.setOpen(false)}),
+            m('.pf-tl-dropdown__backdrop', {onclick: () => this.setOpen(false)}),
             m(
-              '.tl-dropdown__panel',
+              '.pf-tl-dropdown__panel',
               {
                 class: classNames(
-                  attrs.align === 'right' && 'tl-dropdown__panel--right',
+                  attrs.align === 'right' && 'pf-tl-dropdown__panel--right',
                   attrs.panelClass,
                 ),
               },

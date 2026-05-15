@@ -356,10 +356,10 @@ class AppStore {
     } catch (err) {
       const message = messageOf(err);
       const code = err instanceof ApiError ? err.code : undefined;
-      if (keys.length === 1) {
-        const key = keys[0]!;
+      const [singleKey] = keys;
+      if (keys.length === 1 && singleKey !== undefined) {
         this.errors.set(
-          key,
+          singleKey,
           code !== undefined ? {message, code} : {message},
         );
       } else {

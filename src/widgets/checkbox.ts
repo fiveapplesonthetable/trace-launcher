@@ -14,9 +14,9 @@ export class Checkbox implements m.ClassComponent<CheckboxAttrs> {
   view({attrs}: m.CVnode<CheckboxAttrs>): m.Children {
     const {label, checked, onchange, disabled = false} = attrs;
     return m(
-      'label.tl-checkbox',
-      {class: disabled ? 'tl-checkbox--disabled' : undefined},
-      m('input.tl-checkbox__input', {
+      'label.pf-tl-checkbox',
+      {class: disabled ? 'pf-tl-checkbox--disabled' : undefined},
+      m('input.pf-tl-checkbox__input', {
         type: 'checkbox',
         checked,
         disabled,
@@ -24,8 +24,8 @@ export class Checkbox implements m.ClassComponent<CheckboxAttrs> {
           onchange((e.target as HTMLInputElement).checked);
         },
       }),
-      m('span.tl-checkbox__box'),
-      m('span.tl-checkbox__label', label),
+      m('span.pf-tl-checkbox__box'),
+      m('span.pf-tl-checkbox__label', label),
     );
   }
 }
