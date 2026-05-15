@@ -203,6 +203,7 @@ export class Catalog {
       dirs: browse.dirs,
       traces,
       totalSize: traces.reduce((sum, t) => sum + t.size, 0),
+      unfilteredCount: browse.scanned,
       truncated,
       maxResults: this.maxResults,
       selectedMode: this.allowList !== null,
@@ -224,6 +225,8 @@ export class Catalog {
     relDir: string,
   ): {
     candidates: string[];
+    /** Trace files scanned in this view (pre-search). */
+    scanned: number;
     dirs: DirEntry[];
     dir: string;
     absPath: string;
@@ -233,7 +236,14 @@ export class Catalog {
       const candidates = this.allowList.filter((p) =>
         tokensMatch(tokens, this.rel(p)),
       );
-      return {candidates, dirs: [], dir: '', absPath: this.root, parent: null};
+      return {
+        candidates,
+        scanned: this.allowList.length,
+        dirs: [],
+        dir: '',
+        absPath: this.root,
+        parent: null,
+      };
     }
 
     const currentDir = this.resolveDir(relDir);
@@ -253,6 +263,7 @@ export class Catalog {
           .sort((a, b) => a.name.localeCompare(b.name));
 
     const candidates: string[] = [];
+    let scanned = 0;
     const visit = (dir: string): void => {
       for (const entry of readDirEntries(dir)) {
         const full = path.join(dir, entry.name);
@@ -261,6 +272,7 @@ export class Catalog {
           continue;
         }
         if (!entry.isFile() || !looksLikeTrace(entry.name)) continue;
+        scanned++;
         if (searching && !tokensMatch(tokens, this.rel(full))) continue;
         candidates.push(full);
       }
@@ -269,6 +281,7 @@ export class Catalog {
 
     return {
       candidates,
+      scanned,
       dirs,
       dir: this.rel(currentDir),
       absPath: currentDir,

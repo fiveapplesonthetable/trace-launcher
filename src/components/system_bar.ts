@@ -54,8 +54,8 @@ export class SystemBar implements m.ClassComponent {
         hint: disk.path,
       }),
       m(StatCard, {
-        icon: 'play',
-        label: 'Trace processors',
+        icon: 'bolt',
+        label: 'Memory usage',
         value:
           active.length === 0
             ? 'none running'

@@ -121,6 +121,13 @@ export interface CatalogPage {
   readonly traces: readonly TraceEntry[];
   /** Sum of the sizes of every trace on this page. */
   readonly totalSize: number;
+  /**
+   * Trace files the server scanned for this view *before* the search
+   * tokens and structured filters were applied. With no active search or
+   * filter the value equals `traces.length`; with one active it is the
+   * "of how many" denominator the UI displays ("5 of 8 traces").
+   */
+  readonly unfilteredCount: number;
   /** True when the page was capped by --max-results. */
   readonly truncated: boolean;
   readonly maxResults: number;

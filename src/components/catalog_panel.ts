@@ -84,11 +84,18 @@ class DirInfo implements m.ClassComponent {
           : `${catalog.dirs.length} directories`,
       );
     }
-    facts.push(
-      catalog.traces.length === 1
-        ? '1 trace'
-        : `${catalog.traces.length} traces`,
-    );
+    // When a search or structured filter narrows the view we show the
+    // count as "shown / total scanned" so the user can tell at a glance
+    // how many traces the query is hiding. With no narrowing in play
+    // we just show the bare count.
+    const shown = catalog.traces.length;
+    const total = catalog.unfilteredCount;
+    const narrowed = total > 0 && shown < total;
+    if (narrowed) {
+      facts.push(`${shown} / ${total} traces`);
+    } else {
+      facts.push(shown === 1 ? '1 trace' : `${shown} traces`);
+    }
     facts.push(`${formatSize(catalog.totalSize)} total`);
 
     return m('.pf-tl-dirinfo', [

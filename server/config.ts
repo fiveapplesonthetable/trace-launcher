@@ -26,6 +26,13 @@ export interface LaunchOptions {
   readonly batchConcurrency: number;
   readonly maxResults: number;
   readonly recursiveSearch: boolean;
+  /**
+   * When true, every prewarm runs an extra pass that issues
+   * `INCLUDE PERFETTO MODULE <name>` for every entry in the bundled
+   * Perfetto stdlib catalog. Costs ~1-2 s more per prewarm but the
+   * user's later ad-hoc SQL in the UI hits a fully-primed cache.
+   */
+  readonly aggressivePrewarm: boolean;
   /** Optional SQLite metadata DB; null disables the whole metadata layer. */
   readonly metadataDb: string | null;
   readonly metadataTable: string | null;
@@ -59,6 +66,9 @@ Options:
   --max-results <n>          max traces shown per page; 0 = unlimited (default 5000)
   --recursive-search         search recursively under --traces-dir (default)
   --no-recursive-search      scope search to the current directory only
+  --aggressive-prewarm       on every prewarm, also INCLUDE PERFETTO MODULE *
+                             so trace_processor caches every stdlib module
+                             (slower prewarm; faster ad-hoc SQL later)
 
 Metadata (optional — joins a SQLite table to the trace list):
   --metadata-db <path>       SQLite database with a row of metadata per trace
@@ -101,6 +111,7 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
         'max-results': {type: 'string', default: '5000'},
         'recursive-search': {type: 'boolean', default: true},
         'no-recursive-search': {type: 'boolean', default: false},
+        'aggressive-prewarm': {type: 'boolean', default: false},
         'metadata-db': {type: 'string'},
         'metadata-table': {type: 'string'},
         'metadata-key-column': {type: 'string'},
@@ -194,6 +205,7 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
     maxResults,
     // Recursive search defaults on; an explicit --no-recursive-search wins.
     recursiveSearch: values['no-recursive-search'] !== true,
+    aggressivePrewarm: values['aggressive-prewarm'] === true,
     metadataDb,
     metadataTable,
     metadataKeyColumn:
