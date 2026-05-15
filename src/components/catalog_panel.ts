@@ -13,7 +13,7 @@ import {Icon} from '../widgets/icon';
 import {MiddleEllipsis} from '../widgets/middle_ellipsis';
 import {ProgressBar} from '../widgets/progress_bar';
 import {ColumnPicker} from './column_picker';
-import {FilterBar} from './filter_bar';
+import {FilterChips, SearchFilterBar} from './filter_bar';
 
 // The catalog: a configurable-column table of trace files for the current
 // directory / search / filters. Directories are listed first for navigation;
@@ -444,7 +444,7 @@ export class CatalogPanel implements m.ClassComponent {
     return m('section.pf-tl-panel', [
       this.head(traces.length),
       this.toolbar(),
-      m(FilterBar),
+      m(FilterChips),
       m(Breadcrumb),
       m(DirInfo),
       catalog?.truncated === true
@@ -518,24 +518,8 @@ export class CatalogPanel implements m.ClassComponent {
   }
 
   private toolbar(): m.Children {
-    const recursive = store.state?.config.recursiveSearch ?? false;
     return m('.pf-tl-toolbar', [
-      m('.pf-tl-search', [
-        m(Icon, {icon: 'search', size: 16, className: 'pf-tl-search__icon'}),
-        m('input.pf-tl-search__input', {
-          type: 'search',
-          spellcheck: false,
-          placeholder: recursive
-            ? 'Search every trace under the root…'
-            : 'Search traces in this directory…',
-          value: store.query,
-          oninput: (e: Event) => {
-            store.setQuery((e.target as HTMLInputElement).value);
-            // Skip the per-keystroke redraw; the debounced refresh redraws.
-            (e as Event & {redraw?: boolean}).redraw = false;
-          },
-        }),
-      ]),
+      m(SearchFilterBar),
       m('.pf-tl-toolbar__tools', m(ColumnPicker)),
     ]);
   }

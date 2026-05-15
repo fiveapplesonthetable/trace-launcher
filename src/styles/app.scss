@@ -362,66 +362,232 @@ code {
   flex-wrap: wrap;
 }
 
-.pf-tl-search {
-  position: relative;
-  flex: 1;
-  min-width: 220px;
-  display: flex;
-  align-items: center;
-}
-
-.pf-tl-search__icon {
-  position: absolute;
-  left: 11px;
-  color: var(--pf-color-text-muted);
-  pointer-events: none;
-}
-
-.pf-tl-search__input {
-  width: 100%;
-  height: 34px;
-  padding: 0 12px 0 34px;
-  border-radius: var(--pf-tl-radius-sm);
-  border: 1px solid var(--pf-color-border);
-  background: var(--pf-color-background-secondary);
-  color: var(--pf-color-text);
-  font: inherit;
-  outline: none;
-  transition:
-    border-color var(--pf-tl-transition),
-    box-shadow var(--pf-tl-transition);
-
-  &::placeholder {
-    color: var(--pf-color-text-disabled);
-  }
-  &:focus {
-    border-color: var(--pf-color-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-color-accent) 22%, transparent);
-  }
-}
-
 .pf-tl-toolbar__tools {
   display: flex;
   gap: 8px;
 }
 
-// --- filter bar (sits directly below the search bar) -------------------------
+// --- search-filter bar -------------------------------------------------------
+//
+// One input that doubles as free-text search and structured-filter
+// builder. Leading [Column ▾] (and [op ▾]) inline pills swap the bar
+// between modes the way Slack's channel selector swaps Slack's search
+// context.
 
-.pf-tl-filterbar {
+.pf-tl-sfb {
+  position: relative;
+  flex: 1;
+  min-width: 280px;
   display: flex;
-  flex-direction: column;
-  padding: 8px 16px 10px;
-  border-bottom: 1px solid var(--pf-color-border-secondary);
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 6px 0 6px;
+  border-radius: var(--pf-tl-radius-sm);
+  border: 1px solid var(--pf-color-border);
+  background: var(--pf-color-background-secondary);
+  transition:
+    border-color var(--pf-tl-transition),
+    box-shadow var(--pf-tl-transition);
+
+  &:focus-within {
+    border-color: var(--pf-color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-color-accent) 22%, transparent);
+  }
 }
 
-.pf-tl-filterbar__chips {
+.pf-tl-sfb__icon {
+  color: var(--pf-color-text-muted);
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+.pf-tl-sfb__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--pf-color-text);
+  font: inherit;
+  outline: none;
+
+  &::placeholder {
+    color: var(--pf-color-text-disabled);
+  }
+}
+
+.pf-tl-sfb__commit {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border: none;
+  background: var(--pf-color-accent);
+  color: var(--pf-color-on-accent, #fff);
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: var(--pf-tl-radius-sm);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: filter var(--pf-tl-transition);
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// Suggestion popover anchored to the bar. Pinned at the bar's bottom
+// edge and absolutely positioned so the bar's own width doesn't grow.
+.pf-tl-sfb__suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--pf-tl-radius-md);
+  border: 1px solid var(--pf-color-border);
+  background: var(--pf-color-background-secondary);
+  box-shadow: var(--pf-tl-shadow-md, 0 6px 18px rgba(0, 0, 0, 0.18));
+}
+
+.pf-tl-sfb__suggest-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  color: var(--pf-color-text);
+  border-radius: var(--pf-tl-radius-sm);
+  cursor: pointer;
+  transition: background var(--pf-tl-transition);
+
+  &:hover {
+    background: var(--pf-color-background-tertiary);
+  }
+
+  &--active {
+    background: color-mix(in srgb, var(--pf-color-accent) 18%, transparent);
+    color: var(--pf-color-accent);
+  }
+}
+
+// --- inline column / op pills inside the search bar -------------------------
+//
+// "Slack-style" leading dropdowns: a small pill chip with a chevron
+// that opens an anchored menu below it. The context pill (column)
+// uses a faint accent tint; the operator pill is more neutral so the
+// eye lands on the column first.
+
+.pf-tl-pick {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pf-tl-pick__trigger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--pf-tl-transition), color var(--pf-tl-transition);
+
+  .pf-tl-pick__chev {
+    opacity: 0.7;
+  }
+}
+
+.pf-tl-pick--context .pf-tl-pick__trigger {
+  color: var(--pf-color-accent);
+  background: color-mix(in srgb, var(--pf-color-accent) 14%, transparent);
+
+  &:hover,
+  .pf-tl-pick--open & {
+    background: color-mix(in srgb, var(--pf-color-accent) 22%, transparent);
+  }
+}
+
+.pf-tl-pick--op .pf-tl-pick__trigger {
+  color: var(--pf-color-text-muted);
+  background: var(--pf-color-background-tertiary);
+  font-weight: 500;
+
+  &:hover,
+  .pf-tl-pick--open & {
+    color: var(--pf-color-text);
+  }
+}
+
+.pf-tl-pick__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: var(--pf-tl-radius-md);
+  border: 1px solid var(--pf-color-border);
+  background: var(--pf-color-background-secondary);
+  box-shadow: var(--pf-tl-shadow-md, 0 6px 18px rgba(0, 0, 0, 0.18));
+}
+
+.pf-tl-pick__item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  color: var(--pf-color-text);
+  border-radius: var(--pf-tl-radius-sm);
+  cursor: pointer;
+  transition: background var(--pf-tl-transition);
+
+  &:hover {
+    background: var(--pf-color-background-tertiary);
+  }
+
+  &--active {
+    background: color-mix(in srgb, var(--pf-color-accent) 18%, transparent);
+    color: var(--pf-color-accent);
+    font-weight: 600;
+  }
+}
+
+// --- chips row beneath the search bar ---------------------------------------
+
+.pf-tl-chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid var(--pf-color-border-secondary);
 }
 
-.pf-tl-filterbar__clear {
+.pf-tl-chips__clear {
   margin-left: 4px;
   padding: 2px 8px;
   border: none;
@@ -438,8 +604,6 @@ code {
   }
 }
 
-// Active filter chip — the user "loves" these, so styling stays the
-// same. The trailing close button uses a hover halo for visible affordance.
 .pf-tl-chip-filter {
   display: inline-flex;
   align-items: center;
@@ -473,180 +637,6 @@ code {
   &:hover {
     background: color-mix(in srgb, var(--pf-color-accent) 28%, transparent);
     color: var(--pf-color-text);
-  }
-}
-
-// The "+ Add filter" pill — visually matches a chip slot so it reads as
-// "the next chip waiting to be filled". Dashed border signals "interactive
-// placeholder", and the icon gives it a strong tap affordance.
-.pf-tl-filterbar__add {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 10px 2px 6px;
-  border-radius: 999px;
-  border: 1px dashed var(--pf-color-border);
-  background: transparent;
-  color: var(--pf-color-text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1.3;
-  cursor: pointer;
-  transition: border-color var(--pf-tl-transition),
-    color var(--pf-tl-transition),
-    background var(--pf-tl-transition);
-
-  &:hover {
-    border-color: var(--pf-color-accent);
-    color: var(--pf-color-accent);
-    background: color-mix(in srgb, var(--pf-color-accent) 8%, transparent);
-  }
-
-  &--active {
-    border-style: solid;
-    border-color: var(--pf-color-accent);
-    color: var(--pf-color-accent);
-    background: color-mix(in srgb, var(--pf-color-accent) 14%, transparent);
-  }
-}
-
-// --- inline filter builder card ----------------------------------------------
-
-.pf-tl-fb {
-  margin-top: 10px;
-  padding: 12px 14px 10px;
-  border: 1px solid var(--pf-color-border);
-  border-radius: var(--pf-tl-radius-md);
-  background: var(--pf-color-background-secondary);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
-}
-
-// Horizontal segmented control of every filterable column. Scrolls if
-// metadata adds many — the user gets the most common ones (Status,
-// Path, Size) without horizontal scrolling on a normal width.
-.pf-tl-fb__cols {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.pf-tl-fb__col {
-  appearance: none;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--pf-color-text-muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  padding: 4px 10px;
-  border-radius: var(--pf-tl-radius-sm);
-  cursor: pointer;
-  transition: background var(--pf-tl-transition),
-    color var(--pf-tl-transition);
-
-  &:hover {
-    background: var(--pf-color-background-tertiary);
-    color: var(--pf-color-text);
-  }
-
-  &--active {
-    background: color-mix(in srgb, var(--pf-color-accent) 16%, transparent);
-    color: var(--pf-color-accent);
-  }
-}
-
-// op + value + Add + cancel. Value field gets all remaining width so
-// users can actually see what they're typing.
-.pf-tl-fb__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pf-tl-fb__op {
-  flex: 0 0 auto;
-  min-width: 90px;
-}
-
-.pf-tl-fb__value {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 13px;
-}
-
-.pf-tl-fb__add {
-  appearance: none;
-  border: 1px solid var(--pf-color-accent);
-  background: var(--pf-color-accent);
-  color: var(--pf-color-on-accent, #fff);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 14px;
-  border-radius: var(--pf-tl-radius-sm);
-  cursor: pointer;
-  transition: filter var(--pf-tl-transition);
-
-  &:hover:not(:disabled) {
-    filter: brightness(1.06);
-  }
-
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-}
-
-.pf-tl-fb__cancel {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--pf-tl-radius-sm);
-  background: transparent;
-  color: var(--pf-color-text-muted);
-  cursor: pointer;
-  transition: background var(--pf-tl-transition);
-
-  &:hover {
-    background: var(--pf-color-background-tertiary);
-    color: var(--pf-color-text);
-  }
-}
-
-// Real, full-width suggestion list anchored beneath the value input.
-// Not a browser datalist — we control rendering so the highlighted row
-// is keyboard-navigable and clickable without losing focus.
-.pf-tl-fb__suggest {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  max-height: 230px;
-  overflow-y: auto;
-  border-top: 1px solid var(--pf-color-border-secondary);
-  padding-top: 6px;
-}
-
-.pf-tl-fb__suggest-item {
-  appearance: none;
-  border: none;
-  background: transparent;
-  text-align: left;
-  padding: 5px 8px;
-  font-size: 12.5px;
-  color: var(--pf-color-text);
-  border-radius: var(--pf-tl-radius-sm);
-  cursor: pointer;
-  transition: background var(--pf-tl-transition);
-
-  &:hover {
-    background: var(--pf-color-background-tertiary);
-  }
-
-  &--active {
-    background: color-mix(in srgb, var(--pf-color-accent) 18%, transparent);
-    color: var(--pf-color-accent);
   }
 }
 

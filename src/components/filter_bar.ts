@@ -3,23 +3,24 @@ import type {CatalogColumn, FilterOp} from '../../shared/types';
 import {store} from '../core/store';
 import {Icon} from '../widgets/icon';
 
-// Structured filtering. Sits as its own row immediately below the search
-// bar:
+// A single search bar that doubles as the filter builder.
 //
-//   [Status: live ×] [Device: pixel-7 ×] [+ Add filter]
+// In its default mode the bar is exactly the free-text search a user
+// expects on a catalog: type, results narrow. A leading "[Column ▾]"
+// chip inside the bar lets the user point the bar at a different
+// column — Status, Path, Size, any metadata column. When a structured
+// column is selected, a small op chip appears next to it (is / contains
+// / =, >, <, …) and the input becomes the value field, with a real
+// suggestion list pinned beneath. Enter commits the filter as a chip
+// in the row below; the bar resets to free-text mode for the next
+// query.
 //
-// Clicking the trailing "+ Add filter" pill expands a builder card *inline*
-// directly below the chip row — no popover, no tiny browser datalist, no
-// hidden dropdowns. The builder shows:
-//   - a horizontal segmented control for the column
-//   - operator + value side by side (value field is the widest control)
-//   - a generously-sized suggestion list pinned beneath the value, with
-//     the active suggestion highlighted and Enter / arrow-key navigation
-//
-// File-column filters run in the Node server process; metadata-column
-// filters compile to parameterised SQL against the metadata DB; the
-// synthetic "status" column applies client-side against each row's live
-// child status.
+// Pattern reference: Slack's channel selector inside its search bar,
+// Linear's filter pills, Notion's per-field filter row. Single input,
+// context dictated by a leading dropdown, structured commits emit
+// chips that persist.
+
+const FREE_TEXT_COLUMN_ID = 'name';
 
 const OP_LABELS: Readonly<Record<FilterOp, string>> = {
   contains: 'contains',
@@ -37,8 +38,7 @@ const SUGGEST_DEBOUNCE_MS = 140;
 /**
  * Synthetic column for filtering by runtime state. Not part of the server's
  * config.columns — the actual filtering happens client-side in the store
- * against each trace's live RunningChild status. Listed first so it lands
- * as the builder's default, which is the most common reason to filter.
+ * against each trace's live RunningChild status.
  */
 const STATUS_COLUMN: CatalogColumn = {
   id: 'status',
@@ -55,8 +55,26 @@ const STATUS_VALUES: readonly string[] = [
   'crashed',
 ];
 
+/**
+ * Synthetic "column" representing the default free-text search. Picking
+ * it puts the bar into store.query mode; it never gets committed as a
+ * chip.
+ */
+const FREE_TEXT_COLUMN: CatalogColumn = {
+  id: FREE_TEXT_COLUMN_ID,
+  label: 'Search',
+  kind: 'text',
+  source: 'file',
+  filterable: false,
+  defaultVisible: false,
+};
+
+function isFreeText(c: CatalogColumn): boolean {
+  return c.id === FREE_TEXT_COLUMN_ID;
+}
+
 function opsFor(column: CatalogColumn): readonly FilterOp[] {
-  if (column.id === 'status') return STATUS_OPS;
+  if (column.id === STATUS_COLUMN.id) return STATUS_OPS;
   return column.kind === 'number' ? NUMBER_OPS : TEXT_OPS;
 }
 
@@ -69,12 +87,8 @@ function columnLabel(id: string): string {
   return store.availableColumns().find((c) => c.id === id)?.label ?? id;
 }
 
-/**
- * Returns the static suggestion list for a column (status enum) or null
- * when suggestions must come from the metadata DB over the network.
- */
 function staticSuggestions(column: CatalogColumn): readonly string[] | null {
-  if (column.id === 'status') return STATUS_VALUES;
+  if (column.id === STATUS_COLUMN.id) return STATUS_VALUES;
   return null;
 }
 
@@ -86,148 +100,234 @@ function dynamicallySuggestible(column: CatalogColumn): boolean {
   );
 }
 
-/** The expanding inline builder card. Self-contained: opens, commits, closes. */
-class FilterBuilder
-  implements m.ClassComponent<{onClose: () => void}>
-{
-  private column = '';
-  private op: FilterOp = 'contains';
-  private value = '';
+/**
+ * A small chip-styled dropdown trigger that opens an anchored menu of
+ * options. Used for the [Column ▾] and [op ▾] chips inside the search
+ * bar; styled to look like an inline pill that's part of the bar.
+ */
+interface InlinePickAttrs<T> {
+  readonly options: ReadonlyArray<{readonly value: T; readonly label: string}>;
+  readonly value: T;
+  readonly onpick: (value: T) => void;
+  readonly variant?: 'context' | 'op';
+}
+
+class InlinePick<T extends string> implements m.ClassComponent<InlinePickAttrs<T>> {
+  private open = false;
+  private readonly onDocDown = (e: MouseEvent): void => {
+    if (!this.open) return;
+    const target = e.target as Element | null;
+    if (target !== null && (target.closest('.pf-tl-pick') as Element | null) !== null) {
+      // Click is inside this dropdown — let normal handlers run, don't
+      // dismiss. The inner option mousedown handles selection.
+      return;
+    }
+    this.setOpen(false);
+    m.redraw();
+  };
+  private readonly onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.open) {
+      this.setOpen(false);
+      m.redraw();
+    }
+  };
+
+  onremove(): void {
+    document.removeEventListener('mousedown', this.onDocDown, true);
+    document.removeEventListener('keydown', this.onKey);
+  }
+
+  view({attrs}: m.CVnode<InlinePickAttrs<T>>): m.Children {
+    const current =
+      attrs.options.find((o) => o.value === attrs.value)?.label ?? String(attrs.value);
+    const variant = attrs.variant ?? 'context';
+    return m(
+      `.pf-tl-pick.pf-tl-pick--${variant}`,
+      {class: this.open ? 'pf-tl-pick--open' : ''},
+      [
+        m(
+          'button.pf-tl-pick__trigger',
+          {
+            type: 'button',
+            'aria-haspopup': 'listbox',
+            'aria-expanded': this.open ? 'true' : 'false',
+            onclick: (e: MouseEvent) => {
+              e.stopPropagation();
+              this.setOpen(!this.open);
+            },
+          },
+          [
+            m('span.pf-tl-pick__label', current),
+            m(Icon, {icon: 'chevronDown', size: 11, className: 'pf-tl-pick__chev'}),
+          ],
+        ),
+        this.open
+          ? m(
+              '.pf-tl-pick__menu',
+              {role: 'listbox'},
+              attrs.options.map((opt) =>
+                m(
+                  'button.pf-tl-pick__item',
+                  {
+                    type: 'button',
+                    role: 'option',
+                    'aria-selected': opt.value === attrs.value ? 'true' : 'false',
+                    class:
+                      opt.value === attrs.value ? 'pf-tl-pick__item--active' : '',
+                    onmousedown: (e: MouseEvent) => {
+                      // mousedown so we react before the document-mousedown
+                      // dismiss handler runs.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      attrs.onpick(opt.value);
+                      this.setOpen(false);
+                    },
+                  },
+                  opt.label,
+                ),
+              ),
+            )
+          : null,
+      ],
+    );
+  }
+
+  private setOpen(open: boolean): void {
+    if (open === this.open) return;
+    this.open = open;
+    if (open) {
+      // capture-phase so we see clicks before they trigger blurs etc.
+      document.addEventListener('mousedown', this.onDocDown, true);
+      document.addEventListener('keydown', this.onKey);
+    } else {
+      document.removeEventListener('mousedown', this.onDocDown, true);
+      document.removeEventListener('keydown', this.onKey);
+    }
+  }
+}
+
+/**
+ * The combined search + filter builder. Owns the active editor column,
+ * operator, pending value, and the live suggestion list. When the
+ * editor column is "name" the bar drives store.query; for any other
+ * column it builds a structured filter that commits to store.filters.
+ */
+export class SearchFilterBar implements m.ClassComponent {
+  private editorColumn: CatalogColumn = FREE_TEXT_COLUMN;
+  private editorOp: FilterOp = 'contains';
+  private pendingValue = '';
   private suggestions: readonly string[] = [];
   private highlight = -1;
   private suggestTimer: number | undefined;
-  private valueInputDom: HTMLInputElement | null = null;
-  private onClose: () => void = () => {};
-
-  oncreate(): void {
-    // Focus straight into the value input on open. The user has already
-    // committed to "I'm adding a filter"; landing the caret in the only
-    // input they actually have to fill in is the smallest path to commit.
-    this.valueInputDom?.focus();
-  }
+  /** Tracks the DOM input so we can refocus after a dropdown pick. */
+  private inputDom: HTMLInputElement | null = null;
 
   onremove(): void {
     window.clearTimeout(this.suggestTimer);
   }
 
-  view({attrs}: m.CVnode<{onClose: () => void}>): m.Children {
-    // Stash the latest onClose for keyboard handlers that fire outside
-    // the click handlers' lexical scope (Enter on the value input, Esc).
-    this.onClose = attrs.onClose;
-    const filterable = filterableColumns();
-    // filterableColumns() always prepends STATUS_COLUMN — empty would be
-    // an invariant violation, but we guard rather than non-null-assert so
-    // any future refactor that breaks it fails loudly.
-    const selected = filterable.find((c) => c.id === this.column) ?? filterable[0];
-    if (selected === undefined) return null;
-    if (this.column !== selected.id) {
-      this.column = selected.id;
-      this.op = opsFor(selected)[0] ?? 'contains';
-      this.suggestions = staticSuggestions(selected) ?? [];
-    }
-    const ops = opsFor(selected);
-    const staticSugg = staticSuggestions(selected);
-    const visibleSuggestions = this.suggestions;
-    const hasSuggestions = visibleSuggestions.length > 0;
+  view(): m.Children {
+    const recursive = store.state?.config.recursiveSearch ?? false;
+    const cols = filterableColumns();
+    const columnOptions = [
+      {value: FREE_TEXT_COLUMN_ID, label: 'Search (any field)'},
+      ...cols.map((c) => ({value: c.id, label: c.label})),
+    ];
+    const free = isFreeText(this.editorColumn);
+    const ops = free ? [] : opsFor(this.editorColumn);
+    const opOptions = ops.map((op) => ({value: op, label: OP_LABELS[op]}));
+    const sugg = this.suggestions;
+    const inputValue = free ? store.query : this.pendingValue;
+    const placeholder = free
+      ? recursive
+        ? 'Search every trace under the root…'
+        : 'Search traces in this directory…'
+      : `Type a ${this.editorColumn.label.toLowerCase()}…`;
 
-    return m('.pf-tl-fb', [
-      // ── column picker (segmented control) ──────────────────────────────
-      m(
-        '.pf-tl-fb__cols',
-        {role: 'tablist', 'aria-label': 'Filter column'},
-        filterable.map((col) =>
-          m(
-            'button.pf-tl-fb__col',
-            {
-              role: 'tab',
-              'aria-selected': col.id === selected.id ? 'true' : 'false',
-              class: col.id === selected.id ? 'pf-tl-fb__col--active' : '',
-              onclick: () => this.selectColumn(col.id, filterable),
+    return m('.pf-tl-sfb', [
+      // ── leading column picker — the "context" of the search bar ────
+      m<InlinePickAttrs<string>, unknown>(InlinePick, {
+        variant: 'context',
+        value: this.editorColumn.id,
+        options: columnOptions,
+        onpick: (id) => this.selectColumn(id, cols),
+      }),
+      // ── operator picker (only for structured columns) ───────────────
+      free
+        ? null
+        : m<InlinePickAttrs<FilterOp>, unknown>(InlinePick, {
+            variant: 'op',
+            value: this.editorOp,
+            options: opOptions,
+            onpick: (op: FilterOp) => {
+              this.editorOp = op;
+              this.inputDom?.focus();
             },
-            col.label,
-          ),
-        ),
-      ),
-      // ── op + value + Add ───────────────────────────────────────────────
-      m('.pf-tl-fb__row', [
-        m(
-          'select.pf-tl-select.pf-tl-fb__op',
-          {
-            'aria-label': 'Filter operator',
-            value: this.op,
-            onchange: (e: Event) => {
-              this.op = (e.target as HTMLSelectElement).value as FilterOp;
-            },
-          },
-          ops.map((op) => m('option', {value: op}, OP_LABELS[op])),
-        ),
-        m('input.pf-tl-input.pf-tl-fb__value', {
-          type: 'text',
-          spellcheck: false,
-          autocomplete: 'off',
-          placeholder: selected.kind === 'number' ? 'value…' : 'text…',
-          value: this.value,
-          oncreate: (vn: m.VnodeDOM) => {
-            this.valueInputDom = vn.dom as HTMLInputElement;
-          },
-          oninput: (e: Event) => {
-            this.value = (e.target as HTMLInputElement).value;
+          }),
+      m(Icon, {icon: 'search', size: 15, className: 'pf-tl-sfb__icon'}),
+      m('input.pf-tl-sfb__input', {
+        type: 'search',
+        spellcheck: false,
+        autocomplete: 'off',
+        placeholder,
+        value: inputValue,
+        oncreate: (vn: m.VnodeDOM) => {
+          this.inputDom = vn.dom as HTMLInputElement;
+        },
+        oninput: (e: Event) => {
+          const v = (e.target as HTMLInputElement).value;
+          if (free) {
+            store.setQuery(v);
+            // The store's debounce will refresh and redraw on its own;
+            // suppressing the per-keystroke redraw keeps typing smooth.
+            (e as Event & {redraw?: boolean}).redraw = false;
+          } else {
+            this.pendingValue = v;
             this.highlight = -1;
-            this.refreshSuggestions(selected);
-            // Defer the redraw to the debounced suggestion fetch when we
-            // need the network; this also avoids one redraw per keystroke.
+            this.refreshSuggestions();
             (e as Event & {redraw?: boolean}).redraw = false;
             m.redraw();
-          },
-          onkeydown: (e: KeyboardEvent) => this.onKey(e, visibleSuggestions),
-        }),
-        m(
-          'button.pf-tl-fb__add',
-          {
-            disabled: this.value.trim() === '',
-            onclick: () => this.commit(),
-          },
-          'Add',
-        ),
-        m(
-          'button.pf-tl-fb__cancel',
-          {
-            title: 'Cancel (Esc)',
-            'aria-label': 'Cancel',
-            onclick: () => this.onClose(),
-          },
-          m(Icon, {icon: 'close', size: 14}),
-        ),
-      ]),
-      // ── suggestions ─────────────────────────────────────────────────────
-      hasSuggestions
-        ? m(
-            '.pf-tl-fb__suggest',
+          }
+        },
+        onkeydown: (e: KeyboardEvent) => this.onKey(e, sugg),
+      }),
+      // ── commit button — only meaningful for structured filters ────
+      free
+        ? null
+        : m(
+            'button.pf-tl-sfb__commit',
             {
-              role: 'listbox',
-              'aria-label':
-                staticSugg !== null
-                  ? `${selected.label} values`
-                  : `${selected.label} suggestions`,
+              type: 'button',
+              disabled: this.pendingValue.trim() === '',
+              title: 'Apply filter (Enter)',
+              onclick: () => this.commit(),
             },
-            visibleSuggestions.map((value, i) =>
+            [
+              m('span', 'Apply'),
+              m(Icon, {icon: 'chevronRight', size: 12}),
+            ],
+          ),
+      // ── suggestion list (rendered as an absolute panel by CSS) ─────
+      !free && sugg.length > 0
+        ? m(
+            '.pf-tl-sfb__suggest',
+            {role: 'listbox', 'aria-label': `${this.editorColumn.label} suggestions`},
+            sugg.map((v, i) =>
               m(
-                'button.pf-tl-fb__suggest-item',
+                'button.pf-tl-sfb__suggest-item',
                 {
+                  type: 'button',
                   role: 'option',
                   'aria-selected': i === this.highlight ? 'true' : 'false',
                   class:
-                    i === this.highlight ? 'pf-tl-fb__suggest-item--active' : '',
+                    i === this.highlight ? 'pf-tl-sfb__suggest-item--active' : '',
                   onmousedown: (e: MouseEvent) => {
-                    // Use mousedown so the input doesn't lose focus before
-                    // we read the click — onclick fires after blur on some
-                    // browsers and would dismiss the suggestion list first.
                     e.preventDefault();
-                    this.value = value;
+                    this.pendingValue = v;
                     this.commit();
                   },
                 },
-                value,
+                v,
               ),
             ),
           )
@@ -237,23 +337,21 @@ class FilterBuilder
 
   private onKey(e: KeyboardEvent, list: readonly string[]): void {
     if (e.key === 'Escape') {
-      e.preventDefault();
-      this.onClose();
-      return;
-    }
-    if (list.length === 0) {
-      if (e.key === 'Enter') {
+      // Esc in free-text mode is a no-op; in structured mode it
+      // cancels the in-progress filter back to free-text.
+      if (!isFreeText(this.editorColumn)) {
         e.preventDefault();
-        this.commit();
+        this.resetToFreeText();
       }
       return;
     }
-    if (e.key === 'ArrowDown') {
+    if (isFreeText(this.editorColumn)) return;
+    if (list.length > 0 && e.key === 'ArrowDown') {
       e.preventDefault();
       this.highlight = Math.min(list.length - 1, this.highlight + 1);
       return;
     }
-    if (e.key === 'ArrowUp') {
+    if (list.length > 0 && e.key === 'ArrowUp') {
       e.preventDefault();
       this.highlight = Math.max(-1, this.highlight - 1);
       return;
@@ -262,48 +360,55 @@ class FilterBuilder
       e.preventDefault();
       if (this.highlight >= 0 && this.highlight < list.length) {
         const picked = list[this.highlight] as string;
-        this.value = picked;
+        this.pendingValue = picked;
       }
       this.commit();
       return;
     }
   }
 
+  /** Switch the bar's editor column. Clears the pending value: the
+   *  user is changing context, not narrowing the same value. */
   private selectColumn(id: string, all: readonly CatalogColumn[]): void {
-    const col = all.find((c) => c.id === id);
-    if (col === undefined) return;
-    this.column = id;
-    this.op = opsFor(col)[0] ?? 'contains';
-    this.value = '';
-    this.highlight = -1;
-    this.suggestions = staticSuggestions(col) ?? [];
-    // Defer fetch until user starts typing for metadata text columns —
-    // running suggest() with an empty prefix on every column switch is
-    // wasted load, especially with a big metadata table.
-    this.valueInputDom?.focus();
-  }
-
-  /** Picks the right suggestion source for the selected column. */
-  private refreshSuggestions(column: CatalogColumn): void {
-    const fixed = staticSuggestions(column);
-    if (fixed !== null) {
-      // Filter the static list by the partial input so a user typing
-      // `cra` sees only `crashed`. Cheap, keeps the list useful.
-      const q = this.value.trim().toLowerCase();
-      this.suggestions = q === '' ? fixed : fixed.filter((v) => v.toLowerCase().includes(q));
+    if (id === FREE_TEXT_COLUMN_ID) {
+      this.resetToFreeText();
       return;
     }
-    if (!dynamicallySuggestible(column)) {
+    const col = all.find((c) => c.id === id);
+    if (col === undefined) return;
+    this.editorColumn = col;
+    this.editorOp = opsFor(col)[0] ?? 'contains';
+    this.pendingValue = '';
+    this.highlight = -1;
+    this.suggestions = staticSuggestions(col) ?? [];
+    // Async-focus to give Mithril a tick to render the input.
+    setTimeout(() => this.inputDom?.focus(), 0);
+  }
+
+  private refreshSuggestions(): void {
+    const col = this.editorColumn;
+    const fixed = staticSuggestions(col);
+    if (fixed !== null) {
+      const q = this.pendingValue.trim().toLowerCase();
+      this.suggestions =
+        q === '' ? fixed : fixed.filter((v) => v.toLowerCase().includes(q));
+      return;
+    }
+    if (!dynamicallySuggestible(col)) {
       this.suggestions = [];
       return;
     }
     window.clearTimeout(this.suggestTimer);
     this.suggestTimer = window.setTimeout(() => {
       void store
-        .suggest(column.id, this.value)
+        .suggest(col.id, this.pendingValue)
         .then((values) => {
-          this.suggestions = values;
-          m.redraw();
+          // Race-guard: only apply if the user hasn't switched columns
+          // since this request started.
+          if (this.editorColumn.id === col.id) {
+            this.suggestions = values;
+            m.redraw();
+          }
         })
         .catch(() => {
           this.suggestions = [];
@@ -312,97 +417,67 @@ class FilterBuilder
   }
 
   private commit(): void {
-    const value = this.value.trim();
-    if (value === '') return;
-    store.addFilter({column: this.column, op: this.op, value});
-    this.value = '';
-    this.suggestions = staticSuggestions(
-      filterableColumns().find((c) => c.id === this.column) ?? STATUS_COLUMN,
-    ) ?? [];
+    const value = this.pendingValue.trim();
+    if (value === '' || isFreeText(this.editorColumn)) return;
+    store.addFilter({
+      column: this.editorColumn.id,
+      op: this.editorOp,
+      value,
+    });
+    this.resetToFreeText();
+  }
+
+  private resetToFreeText(): void {
+    this.editorColumn = FREE_TEXT_COLUMN;
+    this.editorOp = 'contains';
+    this.pendingValue = '';
+    this.suggestions = [];
     this.highlight = -1;
-    this.onClose();
+    setTimeout(() => this.inputDom?.focus(), 0);
   }
 }
 
 /**
- * The filter bar that sits immediately under the search bar.
- *
- * Always rendered. Carries the active filter chips, a trailing "+ Add
- * filter" pill, and (when expanded) the inline builder card. Hides
- * entirely only when there is nothing to show *and* the builder is
- * closed — i.e. an empty catalog with no filters has no clutter.
+ * The row of removable chips for committed structured filters. Sits
+ * directly under the search bar. Hidden entirely when no filters are
+ * active so the empty state stays clean.
  */
-export class FilterBar implements m.ClassComponent {
-  private open = false;
-
+export class FilterChips implements m.ClassComponent {
   view(): m.Children {
     const filters = store.filters;
-    const hasFilters = filters.length > 0;
-    // Tucking the bar away when there is nothing to show keeps the empty
-    // state spacious — but the moment the user has any filter, or has
-    // opened the builder, the bar is sticky so they can edit/close it.
-    if (!hasFilters && !this.open) {
-      return m('.pf-tl-filterbar', m('.pf-tl-filterbar__chips', this.addPill()));
-    }
-    // Mithril requires every element in a child array to be either all
-    // keyed or all unkeyed — mixing crashes the diff. The chips have
-    // natural keys; the trailing pill / Clear-all get sentinel keys so
-    // the array stays homogeneous as filters come and go.
-    const items: m.Children[] = filters.map((filter, index) =>
-      m(
-        '.pf-tl-chip-filter',
-        {key: `${index}:${filter.column}:${filter.op}:${filter.value}`},
-        [
-          m('span.pf-tl-chip-filter__text', [
-            m('strong', columnLabel(filter.column)),
-            ` ${OP_LABELS[filter.op]} `,
-            filter.value,
-          ]),
+    if (filters.length === 0) return null;
+    return m(
+      '.pf-tl-chips',
+      [
+        ...filters.map((filter, index) =>
           m(
-            'button.pf-tl-chip-filter__remove',
-            {
-              title: 'Remove filter',
-              'aria-label': `Remove filter ${columnLabel(filter.column)} ${filter.op} ${filter.value}`,
-              onclick: () => store.removeFilter(index),
-            },
-            m(Icon, {icon: 'close', size: 12}),
+            '.pf-tl-chip-filter',
+            {key: `${index}:${filter.column}:${filter.op}:${filter.value}`},
+            [
+              m('span.pf-tl-chip-filter__text', [
+                m('strong', columnLabel(filter.column)),
+                ` ${OP_LABELS[filter.op]} `,
+                filter.value,
+              ]),
+              m(
+                'button.pf-tl-chip-filter__remove',
+                {
+                  type: 'button',
+                  title: 'Remove filter',
+                  'aria-label': `Remove filter ${columnLabel(filter.column)} ${filter.op} ${filter.value}`,
+                  onclick: () => store.removeFilter(index),
+                },
+                m(Icon, {icon: 'close', size: 12}),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-    items.push(m.fragment({key: '__add'}, [this.addPill()]));
-    if (hasFilters) {
-      items.push(
+        ),
         m(
-          'button.pf-tl-filterbar__clear',
-          {key: '__clear', onclick: () => store.clearFilters()},
+          'button.pf-tl-chips__clear',
+          {key: '__clear', type: 'button', onclick: () => store.clearFilters()},
           'Clear all',
         ),
-      );
-    }
-    return m('.pf-tl-filterbar', [
-      m('.pf-tl-filterbar__chips', items),
-      this.open
-        ? m(FilterBuilder, {onClose: () => this.toggle(false)})
-        : null,
-    ]);
-  }
-
-  /** The trailing "+ Add filter" pill. Style stays consistent with chips so
-   *  it reads as the obvious next slot to fill. */
-  private addPill(): m.Children {
-    return m(
-      'button.pf-tl-filterbar__add',
-      {
-        class: this.open ? 'pf-tl-filterbar__add--active' : '',
-        'aria-expanded': this.open ? 'true' : 'false',
-        onclick: () => this.toggle(!this.open),
-      },
-      [m(Icon, {icon: 'plus', size: 12}), m('span', 'Add filter')],
+      ],
     );
-  }
-
-  private toggle(next: boolean): void {
-    this.open = next;
   }
 }
