@@ -15,7 +15,6 @@ import {
   type LaunchOptions,
 } from './config';
 import {MetadataError, MetadataStore} from './metadata';
-import {Prewarmer} from './prewarmer';
 import {ProcessManager} from './process_manager';
 
 // Entry point: parse the CLI, wire the catalog + metadata + process manager
@@ -86,17 +85,12 @@ function main(argv: readonly string[]): void {
     fail(err instanceof Error ? err.message : String(err));
   }
 
-  if (options.prewarmSql.length > 0) {
-    log(`prewarm sql         ${options.prewarmSql.length} char(s)`);
-  }
-  const prewarmer = new Prewarmer(options.prewarmSql);
   const processes = new ProcessManager(
     options.tpBinary,
     catalog,
     options.bind,
     options.tpPortBase,
     options.tpPortCount,
-    prewarmer,
     options.batchConcurrency,
   );
 
@@ -154,9 +148,6 @@ function main(argv: readonly string[]): void {
     shuttingDown = true;
     const stopped = processes.stopAll();
     metadata?.close();
-    // Close the headless browser. Awaiting is best-effort here — if it hangs,
-    // the backstop below still exits the process.
-    void prewarmer.close();
     log(`\n${signal} — stopped ${stopped} trace processor(s), exiting.`);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), SHUTDOWN_BACKSTOP_MS).unref();

@@ -741,6 +741,14 @@ code {
   gap: 4px;
 }
 
+// Placeholder so action columns line up when a row has only one button —
+// e.g. an idle row that has a Start button but no Open / Dismiss yet.
+// Width matches a compact icon button (28px) so column geometry is stable.
+.pf-tl-actions__spacer {
+  display: inline-block;
+  width: 28px;
+}
+
 .pf-tl-name-cell {
   display: flex;
   align-items: center;
@@ -866,30 +874,6 @@ code {
   }
   &--starting {
     color: var(--pf-color-warning);
-  }
-  &--prewarming {
-    color: var(--pf-color-accent);
-  }
-  &--prewarmed {
-    color: var(--pf-color-success);
-    // Faint bolt indicator at the leading edge, matching the prewarm button.
-    &::before {
-      content: '⚡';
-      margin-right: 3px;
-      font-size: 10px;
-      opacity: 0.85;
-    }
-  }
-  &--prewarm-failed {
-    color: var(--pf-color-warning);
-    // Crossed-out bolt: visually tied to the prewarm action, but flagged.
-    &::before {
-      content: '⚡';
-      margin-right: 3px;
-      font-size: 10px;
-      opacity: 0.6;
-      text-decoration: line-through;
-    }
   }
   &--crashed {
     color: var(--pf-color-danger);

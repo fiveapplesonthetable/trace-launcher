@@ -3,7 +3,7 @@
 
 Hammers the UI in ways a user could but a deterministic test usually doesn't:
   - rapid, interleaved clicks across many rows in random order
-  - back-to-back Start/Stop/Prewarm presses on the same row
+  - back-to-back Start/Stop presses on the same row
   - simulating a kernel-side kill (SIGKILL, the OOM-killer's signal) on a
     running child to confirm the row transitions cleanly to 'killed'
   - exhausting the port pool, then dismissing the inline error chip on
@@ -123,19 +123,11 @@ def primary_button(page: Page, name: str) -> Locator:
     return trace_row(page, name).locator(".pf-tl-td--actions button").first
 
 
-def prewarm_button(page: Page, name: str) -> Locator:
-    return trace_row(page, name).locator(".pf-tl-td--actions button").nth(1)
-
-
-TRANSIENT_STATES = ".pf-tl-state--starting, .pf-tl-state--prewarming"
+TRANSIENT_STATES = ".pf-tl-state--starting"
 TERMINAL_STATES = (
-    ".pf-tl-state--idle, .pf-tl-state--live, "
-    ".pf-tl-state--prewarmed, .pf-tl-state--crashed"
+    ".pf-tl-state--idle, .pf-tl-state--live, .pf-tl-state--crashed"
 )
-ACTIVE_STATES = (
-    ".pf-tl-state--starting, .pf-tl-state--live, "
-    ".pf-tl-state--prewarming, .pf-tl-state--prewarmed"
-)
+ACTIVE_STATES = ".pf-tl-state--starting, .pf-tl-state--live"
 
 
 def wait_for_terminal_state(
@@ -207,9 +199,9 @@ def start_server() -> subprocess.Popen[bytes]:
 def _snapshot() -> list[dict]:
     """Pull the server's current `running` snapshot via the public API.
 
-    This is the same data the UI polls — pid, port, status, prewarm, exit —
-    so any chaos assertion that compares to "server reality" can ground
-    itself here rather than guessing from /proc.
+    This is the same data the UI polls — pid, port, status, exit — so any
+    chaos assertion that compares to "server reality" can ground itself
+    here rather than guessing from /proc.
     """
     body = json.dumps({"dir": "", "query": "", "filters": []}).encode()
     req = urllib.request.Request(
@@ -222,13 +214,7 @@ def _snapshot() -> list[dict]:
 
 
 def _count_active_children() -> int:
-    """Children with status in (starting, live), as the server sees them.
-
-    The server has only three statuses — starting, live, crashed. Prewarming
-    and prewarmed are UI-only states layered on top of `live` (they live in
-    the `prewarm` field). So `starting + live` server-side == the UI count of
-    `starting + live + prewarming + prewarmed`.
-    """
+    """Children with status in (starting, live), as the server sees them."""
     return sum(1 for c in _snapshot() if c.get("status") in ("starting", "live"))
 
 
@@ -301,23 +287,18 @@ def find_child_pid(name: str) -> int | None:
 # ---------------------------------------------------------------------------
 
 def scenario_monkey_clicks(page: Page) -> None:
-    """Hammer Start/Stop/Prewarm on many rows in randomised order."""
+    """Hammer Start/Stop on many rows in randomised order."""
     rng = random.Random(SEED)
     actions = []
     for name in SAFE_TRACES:
-        for kind in ("start", "prewarm", "stop", "start", "stop"):
+        for kind in ("start", "stop", "start", "stop"):
             actions.append((name, kind))
     rng.shuffle(actions)
 
     for name, kind in actions:
         try:
-            if kind == "start":
-                primary_button(page, name).dispatch_event("click")
-            elif kind == "stop":
-                # The primary button is Stop when the row is live — same target.
-                primary_button(page, name).dispatch_event("click")
-            elif kind == "prewarm":
-                prewarm_button(page, name).dispatch_event("click")
+            # The primary button is Start when idle / Stop when live — same target.
+            primary_button(page, name).dispatch_event("click")
         except Exception as e:
             print(f"   (click {kind} on {name} skipped: {e})", flush=True)
         # Tiny stagger but well under the poll cadence — most actions race
@@ -332,15 +313,14 @@ def scenario_monkey_clicks(page: Page) -> None:
     settle_timeout = 60.0
     transient_left = wait_for_terminal_state(page, timeout=settle_timeout)
     check(
-        "after random Start/Stop/Prewarm bursts, every row reaches a terminal state",
+        "after random Start/Stop bursts, every row reaches a terminal state",
         transient_left == 0,
         f"{transient_left} row(s) still transient after {settle_timeout:.0f} s",
     )
     shot(page, "after-monkey")
 
     # Convergence: server-side (starting + live) must equal UI-side
-    # (starting + live + prewarming + prewarmed), since prewarm is layered
-    # on top of `status=live`. Poll for the full SIGTERM-grace + poll-cadence
+    # (starting + live). Poll for the full SIGTERM-grace + poll-cadence
     # window before declaring failure.
     diff = ui_active = n_children = 0
 
@@ -561,36 +541,6 @@ def scenario_kill_signals(page: Page) -> None:
         check(f"[{label}] retry after the signal brings the row back to live", True)
 
 
-def scenario_kill_during_prewarm(page: Page) -> None:
-    """Killing the child while a prewarm is in flight must not leak state."""
-    _stop_all_and_settle(page)
-    name = SAFE_TRACES[2]
-    _start_and_wait_live(page, name)
-    prewarm_button(page, name).dispatch_event("click")
-    page.wait_for_selector(
-        f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{name}"])'
-        ' .pf-tl-state--prewarming',
-        timeout=10_000,
-    )
-    pid = _kill_child(name, "KILL")
-    if pid is None:
-        check("kill-during-prewarm: child pid available", False)
-        return
-
-    # The chip must end up crashed; the prewarm task quietly bails.
-    page.wait_for_selector(
-        f'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="{name}"])'
-        ' .pf-tl-state--crashed',
-        timeout=10_000,
-    )
-    label = trace_row(page, name).locator(".pf-tl-state--crashed").inner_text().strip()
-    check(
-        "killing a child mid-prewarm surfaces as 'killed' (prewarm task aborts cleanly)",
-        label == "killed",
-        f"chip text: {label!r}",
-    )
-
-
 def scenario_browser_reload_mid_action(page: Page) -> None:
     """Reload the page while traces are running — UI must re-show them."""
     _stop_all_and_settle(page)
@@ -748,7 +698,6 @@ def run_scenarios(page: Page) -> None:
     scenario_monkey_clicks(page)
     scenario_double_clicks_same_row(page)
     scenario_kill_signals(page)
-    scenario_kill_during_prewarm(page)
     scenario_browser_reload_mid_action(page)
     scenario_port_exhaustion_churn(page)
 
@@ -758,20 +707,15 @@ def run_scenarios(page: Page) -> None:
     # is itself a regression we want to surface here.
     _stop_all_via_api()
     _wait_zero_active()
+    non_idle = (
+        ".pf-tl-state--live, .pf-tl-state--starting, .pf-tl-state--crashed"
+    )
     settled = wait_until(
-        lambda: page.locator(
-            ".pf-tl-state--live, .pf-tl-state--starting, "
-            ".pf-tl-state--prewarming, .pf-tl-state--prewarmed, "
-            ".pf-tl-state--crashed"
-        ).count() == 0,
+        lambda: page.locator(non_idle).count() == 0,
         timeout=10.0,
         label="ui returns to fully idle after stop-all",
     )
-    remaining = page.locator(
-        ".pf-tl-state--live, .pf-tl-state--starting, "
-        ".pf-tl-state--prewarming, .pf-tl-state--prewarmed, "
-        ".pf-tl-state--crashed"
-    ).count()
+    remaining = page.locator(non_idle).count()
     check(
         "after the storm, stop-all returns the catalog to idle",
         settled and remaining == 0,

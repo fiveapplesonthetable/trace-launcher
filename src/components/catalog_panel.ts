@@ -266,10 +266,9 @@ class TraceRow
     child: RunningChild | undefined,
     busy: boolean,
   ): m.Children {
-    // The status cell stays single-line. A failed prewarm puts its reason
-    // in the chip's `title` tooltip (see `chip()`); a Start/Stop API
-    // error surfaces as a compact inline chip beside the state chip with
-    // the full message in `title`, *not* on a second line.
+    // The status cell stays single-line. A Start/Stop API error surfaces
+    // as a compact inline chip beside the state chip with the full
+    // message in `title`, *not* on a second line.
     const actionError = store.errorFor(trace.key);
     return m('.pf-tl-status-cell', [
       this.chip(child),
@@ -316,9 +315,8 @@ class TraceRow
   }
 
   private chip(child: RunningChild | undefined): m.Children {
-    // The "no child" and "child without a port to display" cases are
-    // handled first so the rest of the switch can reference child.port
-    // without a non-null assertion.
+    // The "no child" case is handled first so the rest of the switch
+    // can reference child.port without a non-null assertion.
     if (child === undefined) return m('span.pf-tl-state.pf-tl-state--idle', 'idle');
     const state = rowStateFor(child);
     switch (state) {
@@ -330,16 +328,6 @@ class TraceRow
         return m('span.pf-tl-state.pf-tl-state--live', `live :${child.port}`);
       case 'starting':
         return m('span.pf-tl-state.pf-tl-state--starting', 'starting');
-      case 'prewarming':
-        return m('span.pf-tl-state.pf-tl-state--prewarming', `prewarming :${child.port}`);
-      case 'prewarmed':
-        return m('span.pf-tl-state.pf-tl-state--prewarmed', `prewarmed :${child.port}`);
-      case 'prewarm-failed':
-        return m(
-          'span.pf-tl-state.pf-tl-state--prewarm-failed',
-          {title: child.prewarmError ?? 'prewarm failed'},
-          'prewarm failed',
-        );
       case 'crashed':
         return m('span.pf-tl-state.pf-tl-state--crashed', this.crashedLabel(child));
     }
@@ -364,11 +352,11 @@ class TraceRow
   ): m.Children {
     // Two icon-only buttons in a fixed-width slot, so column alignment is
     // preserved row-to-row no matter the state. Button 1 is a Start/Stop
-    // toggle. Button 2 evolves through Prewarm -> (spinner) -> Open as the
-    // background prewarm completes, or stays as Dismiss for crashed rows.
+    // toggle; button 2 is Open-in-Perfetto for a live child, or Dismiss
+    // for a crashed one, or nothing for an idle row.
     return [
       this.primaryButton(trace, child, pending),
-      this.secondaryButton(trace, child, pending),
+      this.secondaryButton(trace, child),
     ];
   }
 
@@ -411,13 +399,14 @@ class TraceRow
     });
   }
 
-  /** Prewarm, Open (after prewarmed), Dismiss (for crashed), or a spinner. */
+  /** Open-in-Perfetto for a live child, Dismiss for a crashed one,
+   *  otherwise a fixed-width spacer so action-column widths line up. */
   private secondaryButton(
     trace: TraceEntry,
     child: RunningChild | undefined,
-    pending: boolean,
   ): m.Children {
-    if (child !== undefined && child.status === 'crashed') {
+    if (child === undefined) return m('.pf-tl-actions__spacer');
+    if (child.status === 'crashed') {
       return m(Button, {
         icon: 'close',
         variant: 'minimal',
@@ -426,40 +415,18 @@ class TraceRow
         onclick: () => void store.stop(trace.key),
       });
     }
-    if (child !== undefined && child.prewarm === 'prewarmed') {
+    if (child.status === 'live') {
       return m(Button, {
         icon: 'external',
         intent: 'primary',
         variant: 'outlined',
         compact: true,
-        title: 'Open in Perfetto (prewarmed)',
+        title: `Open in ui.perfetto.dev (rpc :${child.port})`,
         href: child.perfettoUrl,
         target: '_blank',
       });
     }
-    if (child !== undefined && child.prewarm === 'prewarming') {
-      return m(Button, {
-        icon: 'bolt',
-        intent: 'primary',
-        variant: 'outlined',
-        compact: true,
-        title: 'Prewarming…',
-        loading: true,
-      });
-    }
-    const failedHint =
-      child?.prewarm === 'prewarm-failed' && child.prewarmError !== undefined
-        ? `Prewarm failed: ${child.prewarmError}. Click to retry.`
-        : 'Prewarm — preload ui.perfetto.dev against this trace';
-    return m(Button, {
-      icon: 'bolt',
-      intent: 'primary',
-      variant: 'outlined',
-      compact: true,
-      title: failedHint,
-      loading: pending && child?.prewarm !== 'prewarming',
-      onclick: () => void store.prewarm(trace.key),
-    });
+    return m('.pf-tl-actions__spacer');
   }
 }
 
@@ -526,17 +493,6 @@ export class CatalogPanel implements m.ClassComponent {
           compact: true,
           disabled: traceCount === 0,
           onclick: () => void store.startVisible(),
-        }),
-        m(Button, {
-          label: 'Prewarm all shown',
-          icon: 'bolt',
-          variant: 'outlined',
-          compact: true,
-          disabled: traceCount === 0,
-          title:
-            'Preload ui.perfetto.dev against every trace in this view so ' +
-            'opening them later is instant',
-          onclick: () => void store.prewarmVisible(),
         }),
         m(Button, {
           label: 'Open all shown',

@@ -88,29 +88,6 @@ export function createApiRouter(deps: ApiDeps) {
     }
   });
 
-  // Prewarm a trace: ensure the child is live, then load ui.perfetto.dev
-  // against it in a headless browser so the trace_processor caches the UI's
-  // initial query burst. Returns once the prewarm is scheduled; the snapshot
-  // surfaces 'prewarming' / 'prewarmed' / 'prewarm-failed' state as it runs.
-  router.post('/prewarm', async (req, res) => {
-    const trace = readTrace(req.body);
-    if (trace === null) {
-      res.status(400).json({error: 'request body must be {"trace": "<path>"}'});
-      return;
-    }
-    try {
-      await processes.ensurePrewarm(trace);
-      res.json({ok: true});
-    } catch (err) {
-      sendError(res, err, {ok: false});
-    }
-  });
-
-  router.post('/prewarm-batch', async (req, res) => {
-    const scheduled = await processes.prewarmMany(readTraces(req.body));
-    res.json({scheduled});
-  });
-
   // Stop a live child, or dismiss a crashed one.
   router.post('/stop', (req, res) => {
     const trace = readTrace(req.body);

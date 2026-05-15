@@ -78,12 +78,6 @@ export const api = {
   stop(trace: string): Promise<void> {
     return postJson<unknown>('/stop', {trace}).then(discard);
   },
-  prewarm(trace: string): Promise<void> {
-    return postJson<unknown>('/prewarm', {trace}).then(discard);
-  },
-  prewarmBatch(traces: readonly string[]): Promise<void> {
-    return postJson<unknown>('/prewarm-batch', {traces}).then(discard);
-  },
   startBatch(traces: readonly string[]): Promise<void> {
     return postJson<unknown>('/start-batch', {traces}).then(discard);
   },

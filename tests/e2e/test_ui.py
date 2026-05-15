@@ -158,24 +158,6 @@ def run_scenarios(page: Page) -> None:
     )
     shot(page, "running-live")
 
-    # --- 4b. prewarm flow ---------------------------------------------------
-    # Click the secondary action (the bolt icon) on the already-live row. The
-    # state chip should flip to 'prewarming' within a couple of poll cycles.
-    # The fake trace_processor isn't a real RPC server, so the prewarmer will
-    # eventually time out and the chip becomes 'prewarm-failed' — but that
-    # *itself* exercises the failure-surfacing path, which is the point.
-    boot.locator(".pf-tl-td--actions button").nth(1).dispatch_event("click")
-    page.wait_for_selector(
-        'tr.pf-tl-tr--trace:has(.pf-tl-name-cell__text[title="android-boot.pftrace"])'
-        ' .pf-tl-state--prewarming',
-        timeout=10_000,
-    )
-    check(
-        "clicking prewarm transitions the row to 'prewarming'",
-        boot.locator(".pf-tl-state--prewarming").count() == 1,
-    )
-    shot(page, "prewarming")
-
     # --- 5. a crashing trace_processor surfaces as crashed -----------------
     crash = trace_row(page, "broken-crash.pftrace")
     crash.locator(".pf-tl-td--actions button").first.dispatch_event("click")
@@ -336,13 +318,7 @@ def run_scenarios(page: Page) -> None:
     # the context level — every open() still spawns a Page object that we
     # observe via the 'page' event, but the underlying request is aborted
     # so we never actually hit the network.
-    #
-    # Openable rows are every row whose backing child holds a bound port:
-    # the UI states live, prewarming, and prewarmed (server status='live'
-    # in all three, with prewarm/prewarmed layered on the same port).
-    live_count = page.locator(
-        ".pf-tl-state--live, .pf-tl-state--prewarming, .pf-tl-state--prewarmed"
-    ).count()
+    live_count = page.locator(".pf-tl-state--live").count()
     context = page.context
     opened_pages: list[Page] = []
     on_new_page = lambda new: opened_pages.append(new)  # noqa: E731

@@ -12,13 +12,6 @@
 /** Lifecycle of a spawned trace_processor_shell child. */
 export type ChildStatus = 'starting' | 'live' | 'crashed';
 
-/**
- * Lifecycle of the per-child prewarm task: a headless browser that loads
- * ui.perfetto.dev against the child's RPC port so the trace_processor caches
- * the UI's initial queries.
- */
-export type PrewarmStatus = 'prewarming' | 'prewarmed' | 'prewarm-failed';
-
 /** How a child process ended (only present once it has exited). */
 export interface ChildExit {
   /** Process exit code, or null if it was terminated by a signal. */
@@ -46,10 +39,6 @@ export interface RunningChild {
   readonly perfettoUrl: string;
   /** Populated only when status is 'crashed'. */
   readonly exit?: ChildExit;
-  /** Present only when prewarm has been triggered for this child. */
-  readonly prewarm?: PrewarmStatus;
-  /** Populated when prewarm is 'prewarm-failed'. */
-  readonly prewarmError?: string;
 }
 
 // --- catalog -----------------------------------------------------------------
@@ -202,7 +191,7 @@ export interface SuggestResponse {
   readonly values: readonly string[];
 }
 
-/** Result of a single start/stop/prewarm action. */
+/** Result of a single start/stop action. */
 export interface ActionResult {
   readonly ok: boolean;
   readonly error?: string;

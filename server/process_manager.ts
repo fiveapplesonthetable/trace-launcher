@@ -3,12 +3,10 @@ import type {ChildProcess} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {setTimeout as sleep} from 'node:timers/promises';
 
-import type {ChildExit, PrewarmStatus, RunningChild} from '../shared/types';
+import type {ChildExit, RunningChild} from '../shared/types';
 import type {Catalog} from './catalog';
 import {PortAllocator, portIsOpen} from './ports';
-import type {Prewarmer} from './prewarmer';
 import {processRss} from './system';
 
 // The process manager owns every trace_processor_shell child: it spawns them,
@@ -21,10 +19,10 @@ const CRASH_TTL_MS = 60_000;
 const KILL_GRACE_MS = 5_000;
 
 /**
- * Default parallelism for batch operations (Start all shown / Prewarm all
- * shown). Sized to the host CPU count, clamped to [2, 8]: any less and the
- * batch crawls on big-multi-trace catalogs, any more and the prewarmer's
- * headless Chrome thrashes for no win — each prewarm is a real page load.
+ * Default parallelism for "Start all shown". Sized to the host CPU
+ * count, clamped to [2, 8]: any less and the batch crawls on
+ * big-multi-trace catalogs, any more and the host's IO + scheduler
+ * tend to saturate without speeding up start time.
  */
 function defaultBatchConcurrency(): number {
   const cpus = Math.max(1, os.cpus().length);
@@ -35,9 +33,9 @@ function defaultBatchConcurrency(): number {
  * Run `task` over every item with at most `limit` in flight at once.
  * Returns the number of successful tasks; rejections are swallowed because
  * the caller is the API layer, which surfaces them only as aggregate counts
- * ("started=3", "scheduled=5"). Sized so two concurrent batch operations
- * cannot starve each other — each worker pulls the next index atomically
- * via the closure-captured cursor.
+ * ("started=3"). Sized so two concurrent batch operations cannot starve
+ * each other — each worker pulls the next index atomically via the
+ * closure-captured cursor.
  */
 async function runConcurrent<T>(
   items: readonly T[],
@@ -62,8 +60,6 @@ async function runConcurrent<T>(
   await Promise.all(Array.from({length: cap}, worker));
   return success;
 }
-/** How long the prewarm worker will wait for the trace_processor port to open. */
-const PREWARM_PORT_WAIT_MS = 30_000;
 
 interface Child {
   readonly trace: string;
@@ -75,9 +71,6 @@ interface Child {
   stopping: boolean;
   /** Set once the process exits; null while it is still running. */
   exit: ChildExit | null;
-  /** Prewarm task state; null until a prewarm has been requested. */
-  prewarm: PrewarmStatus | null;
-  prewarmError: string | null;
 }
 
 /** Deep link that opens a child's RPC port in ui.perfetto.dev. The
@@ -102,7 +95,7 @@ export class ProcessManager {
    */
   private readonly inFlight = new Map<string, Promise<Child>>();
   private readonly allocator: PortAllocator;
-  /** Workers in flight at once for startMany / prewarmMany. */
+  /** Workers in flight at once for startMany. */
   private readonly batchConcurrency: number;
 
   constructor(
@@ -111,7 +104,6 @@ export class ProcessManager {
     private readonly bind: string,
     portBase: number,
     portCount: number,
-    private readonly prewarmer: Prewarmer | undefined = undefined,
     batchConcurrency: number = defaultBatchConcurrency(),
   ) {
     this.allocator = new PortAllocator(bind, portBase, portCount);
@@ -125,7 +117,27 @@ export class ProcessManager {
    * inFlight map.
    */
   async ensureChild(traceKey: string): Promise<void> {
-    await this.ensureChildInternal(traceKey);
+    const trace = this.catalog.validate(traceKey);
+    this.expireCrashed();
+
+    const existing = this.children.get(trace);
+    if (existing && existing.exit === null) return;
+
+    const pending = this.inFlight.get(trace);
+    if (pending !== undefined) {
+      await pending;
+      return;
+    }
+
+    if (existing) this.children.delete(trace); // crashed leftover — replace it
+
+    const promise = this.spawnChild(trace).finally(() => {
+      // Always clear the in-flight slot, success or failure — the next call
+      // either finds the child in `children` or starts over.
+      if (this.inFlight.get(trace) === promise) this.inFlight.delete(trace);
+    });
+    this.inFlight.set(trace, promise);
+    await promise;
   }
 
   /**
@@ -136,27 +148,6 @@ export class ProcessManager {
    */
   startMany(keys: readonly string[]): Promise<number> {
     return runConcurrent(keys, this.batchConcurrency, (k) => this.ensureChild(k));
-  }
-
-  private ensureChildInternal(traceKey: string): Promise<Child> {
-    const trace = this.catalog.validate(traceKey);
-    this.expireCrashed();
-
-    const existing = this.children.get(trace);
-    if (existing && existing.exit === null) return Promise.resolve(existing);
-
-    const pending = this.inFlight.get(trace);
-    if (pending !== undefined) return pending;
-
-    if (existing) this.children.delete(trace); // crashed leftover — replace it
-
-    const promise = this.spawnChild(trace).finally(() => {
-      // Always clear the in-flight slot, success or failure — the next call
-      // either finds the child in `children` or starts over.
-      if (this.inFlight.get(trace) === promise) this.inFlight.delete(trace);
-    });
-    this.inFlight.set(trace, promise);
-    return promise;
   }
 
   private async spawnChild(trace: string): Promise<Child> {
@@ -188,8 +179,6 @@ export class ProcessManager {
       startedMs: Date.now(),
       stopping: false,
       exit: null,
-      prewarm: null,
-      prewarmError: null,
     };
     proc.on('error', () => {
       // Spawn-time failure (e.g. the binary vanished): record it as a crash so
@@ -208,43 +197,6 @@ export class ProcessManager {
     });
     this.children.set(trace, child);
     return child;
-  }
-
-  /**
-   * Ensures a child is live for `traceKey` and triggers a prewarm in the
-   * background. Idempotent: re-invoking it while a prewarm is already
-   * 'prewarming' or 'prewarmed' is a no-op. The promise resolves once the
-   * prewarm has been *scheduled*, not once it has finished — callers poll
-   * the snapshot to observe the transition to 'prewarmed' / 'prewarm-failed'.
-   */
-  async ensurePrewarm(traceKey: string): Promise<void> {
-    if (this.prewarmer === undefined) {
-      throw new Error('prewarm is not configured on this server');
-    }
-    // Use the child returned by ensureChildInternal directly — looking it up
-    // through this.children afterwards opens a window where a concurrent
-    // stop() could have removed it.
-    const child = await this.ensureChildInternal(traceKey);
-    if (child.exit !== null || child.stopping) return;
-    if (child.prewarm === 'prewarming' || child.prewarm === 'prewarmed') {
-      return; // already in flight or done
-    }
-    child.prewarm = 'prewarming';
-    child.prewarmError = null;
-    // Fire-and-forget; the child's prewarm field updates as the task runs and
-    // any error surfaces through the snapshot.
-    void this.runPrewarm(child);
-  }
-
-  /**
-   * Schedules a prewarm for every key in parallel, up to `batchConcurrency`
-   * in flight at once. The headless Chromium can load multiple ui.perfetto.dev
-   * tabs concurrently, so a parallel walk shortens batch latency by roughly
-   * a factor of `batchConcurrency` on a fast box. Failures are swallowed:
-   * one stuck prewarm must not block the rest.
-   */
-  prewarmMany(keys: readonly string[]): Promise<number> {
-    return runConcurrent(keys, this.batchConcurrency, (k) => this.ensurePrewarm(k));
   }
 
   /**
@@ -292,7 +244,7 @@ export class ProcessManager {
   private describe(child: Child, portOpen: boolean): RunningChild {
     const status: RunningChild['status'] =
       child.exit !== null ? 'crashed' : portOpen ? 'live' : 'starting';
-    let described: RunningChild = {
+    const described: RunningChild = {
       key: child.trace,
       rel: this.catalog.rel(child.trace),
       name: path.basename(child.trace),
@@ -304,59 +256,8 @@ export class ProcessManager {
       traceSize: fileSize(child.trace),
       perfettoUrl: perfettoUrl(child.port),
     };
-    if (child.prewarm !== null) {
-      described = {...described, prewarm: child.prewarm};
-      if (child.prewarmError !== null) {
-        described = {...described, prewarmError: child.prewarmError};
-      }
-    }
-    if (child.exit !== null) {
-      described = {...described, exit: child.exit};
-    }
+    if (child.exit !== null) return {...described, exit: child.exit};
     return described;
-  }
-
-  /** Background task: wait for the port, hand off to the Prewarmer.
-   *
-   * Logs both the start and the outcome to stderr (one line each, with the
-   * basename + port) so a misconfigured host — missing Chromium binary,
-   * sandbox refusal, network block — is visible in the dev server output
-   * the same way the UI surfaces it. Without this the only signals are
-   * the chip transitioning and the inline error in the row, which can be
-   * easy to miss if the operator is looking at the terminal. */
-  private async runPrewarm(child: Child): Promise<void> {
-    if (this.prewarmer === undefined) return;
-    const tag = `${path.basename(child.trace)} :${child.port}`;
-    const startedMs = Date.now();
-    process.stderr.write(`prewarm: starting ${tag}\n`);
-    try {
-      const deadline = Date.now() + PREWARM_PORT_WAIT_MS;
-      while (Date.now() < deadline) {
-        if (child.exit !== null || child.stopping) return;
-        if (await portIsOpen(this.bind, child.port)) break;
-        await sleep(400);
-      }
-      if (child.exit !== null || child.stopping) return;
-      if (!(await portIsOpen(this.bind, child.port))) {
-        throw new Error('trace_processor did not come up in time');
-      }
-      await this.prewarmer.warm(child.port);
-      if (child.exit === null && !child.stopping) {
-        child.prewarm = 'prewarmed';
-        child.prewarmError = null;
-        const elapsed = ((Date.now() - startedMs) / 1000).toFixed(1);
-        process.stderr.write(`prewarm: prewarmed ${tag} in ${elapsed}s\n`);
-      }
-    } catch (err) {
-      if (child.exit !== null || child.stopping) return;
-      const message = err instanceof Error ? err.message : String(err);
-      child.prewarm = 'prewarm-failed';
-      child.prewarmError = message;
-      const elapsed = ((Date.now() - startedMs) / 1000).toFixed(1);
-      process.stderr.write(
-        `prewarm: failed ${tag} after ${elapsed}s: ${message}\n`,
-      );
-    }
   }
 
   private livePorts(): number[] {

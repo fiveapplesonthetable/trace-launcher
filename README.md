@@ -6,11 +6,8 @@ a directory of Perfetto traces.
 Point it at a folder of traces and a `trace_processor_shell` binary. It gives
 you a browsable, searchable, filterable catalog; one click starts a
 `trace_processor_shell server` for a trace and hands you a deep link straight
-into [ui.perfetto.dev][ui]. A second click "prewarms" the trace — a headless
-browser loads the viewer against it so the trace_processor caches the UI's
-initial query burst, and your real click into the deep link renders instantly.
-It tracks every child process — live, prewarming, prewarmed, still coming up,
-or crashed — so you always know what is running and on which port.
+into [ui.perfetto.dev][ui]. It tracks every child process — live, still coming
+up, or crashed — so you always know what is running and on which port.
 
 It is the spiritual successor to the single-file `serve_trace_ui.py` operator
 helper: same job, but a real typed front end and back end instead of
@@ -25,24 +22,20 @@ server-rendered HTML.
 | --- | --- |
 | ![Catalog view](docs/screenshot-catalog.png) | ![Active traces](docs/screenshot-running.png) |
 
-| Prewarming a row | Out-of-ports error, shown inline |
-| --- | --- |
-| ![Prewarming a trace](docs/screenshot-prewarming.png) | ![Out-of-ports inline error](docs/screenshot-max-ports.png) |
-
 | Metadata filter | Filter by runtime state |
 | --- | --- |
 | ![Metadata filter](docs/screenshot-filter.png) | ![Status filter](docs/screenshot-status-filter.png) |
 
-| Light theme | |
+| Out-of-ports error, shown inline | Light theme |
 | --- | --- |
-| ![Light theme](docs/screenshot-light.png) | |
+| ![Out-of-ports inline error](docs/screenshot-max-ports.png) | ![Light theme](docs/screenshot-light.png) |
 
 ## Features
 
 - **One grid for everything.** Traces and their live state share a single
   catalog table. The leading column carries a fixed-width action slot
-  (Start, Cancel, Stop, Retry, Prewarm, Open in Perfetto) so columns line up
-  no matter what state a row is in. There is no separate "running" panel to
+  (Start, Cancel, Stop, Retry, Open in Perfetto) so columns line up no
+  matter what state a row is in. There is no separate "running" panel to
   keep in sync.
 - **Browse, smart-search, sort — all server-side.** Walk the directory
   tree by clicking folders, or just type. The search is a case-insensitive
@@ -55,28 +48,24 @@ server-rendered HTML.
   (shallowest paths first), so a fresh recursive view stays scannable.
 - **Filter on anything, including runtime state.** Structured filters on
   path, size, every column of the optional metadata DB, and on the live
-  status (`idle`, `starting`, `live`, `prewarming`, `prewarmed`, `crashed`).
-  Metadata filters compile to parameterised SQL; status filters apply
-  client-side because they depend on live process state. Search and
-  filters cover every state uniformly.
+  status (`idle`, `starting`, `live`, `crashed`). Metadata filters
+  compile to parameterised SQL; status filters apply client-side because
+  they depend on live process state. Search and filters cover every
+  state uniformly.
 - **One-click launch with deep link.** Starts are idempotent — a double-click
   never spawns two servers. The row shows the bound port and gives you a
   ui.perfetto.dev link wired to that port.
-- **Prewarm.** A second per-row button loads ui.perfetto.dev against the
-  trace in a headless Chromium so the trace_processor caches the UI's
-  initial query burst. When you later open the deep link yourself, the
-  viewer renders without a wait.
 - **Batch actions — and they run in parallel.** "Start all shown",
-  "Prewarm all shown", "Open all shown", and "Stop all shown" each
-  honour the active filter and search. The first three run server-side
-  with up to `nproc` workers in flight at once (configurable via
-  `--batch-concurrency`), so opening a directory of 200 traces is bound
-  by the prewarmer + port allocator, not a serial for-loop. "Open all
-  shown" spawns one ui.perfetto.dev tab per live row via the anchor-click
-  idiom — survives popup blockers that reject `window.open()` in a loop.
-- **Honest status.** Every child is shown as `starting`, `live`,
-  `prewarming`, `prewarmed`, or `crashed` (with its exit code / signal) right
-  inside its catalog row. A crash is never silent; retry or dismiss it inline.
+  "Open all shown", and "Stop all shown" each honour the active filter
+  and search. Starts run server-side with up to `nproc` workers in
+  flight at once (configurable via `--batch-concurrency`), so opening a
+  directory of 200 traces is bound by the port allocator, not a serial
+  for-loop. "Open all shown" spawns one ui.perfetto.dev tab per live
+  row via the anchor-click idiom — survives popup blockers that reject
+  `window.open()` in a loop.
+- **Honest status.** Every child is shown as `starting`, `live`, or
+  `crashed` (with its exit code / signal) right inside its catalog row.
+  A crash is never silent; retry or dismiss it inline.
 - **Inline action errors.** If a start fails (e.g. the port pool is
   exhausted) the offending row shows a one-line error with a hint to free a
   port, plus an `×` dismiss. The error is per-row; the rest of the grid
@@ -136,22 +125,7 @@ npm run build
 `npm install` takes ~20 s; `npm run build` takes ~2 s. That's all the
 setup — no global tools, no system packages beyond Node + git.
 
-### 3. (Optional) Enable prewarm
-
-The prewarm feature uses a headless Chromium that `npm install` does **not**
-fetch automatically. Without this step the rest of the app works fine; only
-the bolt button on each row fails (`prewarm-failed` chip explaining why).
-Run once:
-
-```sh
-npx playwright install chromium-headless-shell
-```
-
-That caches a ~110 MB Chromium build under `~/.cache/ms-playwright/`. After
-this, click the bolt icon on any running row — the chip flips
-`prewarming` → `prewarmed` within a few seconds.
-
-### 4. Run it
+### 3. Run it
 
 **With your own `trace_processor_shell` binary and trace dir** (the real
 use case):
@@ -266,8 +240,8 @@ Backend trace_processor port pool:
   --tp-port-base <n>         first backend trace_processor port
                              (default 19000)
   --tp-port-count <n>        size of the backend port range (default 4096)
-  --batch-concurrency <n>    workers in flight for "Start all shown" /
-                             "Prewarm all shown" (default: clamp(nproc, 2, 8))
+  --batch-concurrency <n>    workers in flight for "Start all shown"
+                             (default: clamp(nproc, 2, 8))
 
 Metadata (optional — joins a SQLite table to the trace list):
   --metadata-db <path>       SQLite database with a row of metadata per trace
@@ -355,10 +329,6 @@ npm start -- … --tp-port-base 19500 --tp-port-count 8
 
 ## Troubleshooting
 
-- **The bolt button never finishes — chip stuck on `prewarm-failed`.**
-  You probably haven't installed the Chromium binary. Run
-  `npx playwright install chromium-headless-shell` and try again. The
-  tooltip on the chip shows the underlying error.
 - **`EADDRINUSE` on startup.** Another process owns `--port` (default 9002)
   or one of the backend ports in the pool. Pick a different `--port` or
   shift `--tp-port-base`.
@@ -383,61 +353,6 @@ npm run check        # typecheck + test + build
 npm run seed         # rebuild fixtures/metadata.db
 ```
 
-### Prewarm benchmark
-
-`tests/e2e/test_prewarm_bench.py` exercises the prewarm flow against a
-**real** `trace_processor_shell` (not the `fake-tp` shim that the
-deterministic suite uses) and reports timings for three modes
-(`no-prewarm`, `normal-prewarm`, `prewarm-sql`). The bench is also a
-strict end-to-end correctness check — it asserts that:
-
-- the "Version mismatch" and "Use trace processor native acceleration?"
-  modals are both auto-accepted (a stuck dialog would block the prewarm
-  tab forever and the bench would catch it), and
-- the page reaches first-track render and full idle without manual
-  intervention.
-
-Run:
-
-```sh
-TL_BENCH_TP_BINARY=/path/to/trace_processor_shell \
-TL_BENCH_TRACE=/path/to/a-real.pftrace \
-python3 tests/e2e/test_prewarm_bench.py
-```
-
-Reference numbers — `trace_processor_shell` from the Perfetto release
-prebuilts, Perfetto UI as of 2026-05-15, a 467 MB `.pftrace`. (Smaller
-traces show similar *shapes*; the prewarm-sql benefit only stands out
-on traces big enough that module compilation matters relative to query
-execution.)
-
-| Scenario       | Prewarm finish | Engine probe | First-track render | Fully idle |
-|----------------|---------------:|-------------:|-------------------:|-----------:|
-| no prewarm     |              — |        0.54s |             15.24s |     75.64s |
-| normal prewarm |         62.95s |        0.97s |             16.04s |     76.44s |
-| prewarm-sql    |        124.75s |  **0.00s**   |             13.99s |     74.37s |
-
-How to read these:
-
-- **Engine probe** is one direct round-trip of
-  `INCLUDE PERFETTO MODULE android.startup.startups; SELECT COUNT(*) FROM android_startups;`
-  against `trace_processor`'s HTTP RPC, with no browser in the middle.
-  It is the cleanest prewarm-sql signal: without `--prewarm-sql`,
-  `trace_processor` has to parse and compile the module on first
-  reference; with it, the module is already loaded and the query is a
-  straight table read. ~500× speed-up on this trace.
-- **Normal prewarm** primes Perfetto's *page-load* query burst (track
-  list, plugins, etc.) but does not help much on top of
-  `trace_processor`'s already-fast initial-query path. Useful as a
-  liveness probe — if it completes, the trace is openable.
-- **First-track** is the perceptually meaningful "I can see something"
-  moment in a real browser; **fully-idle** is bound from below by
-  Perfetto's hardcoded 60 s `waitForPerfettoIdle` deadline in headless
-  (its omnibox "message-mode" indicator stays set without user
-  interaction). A real user does not see that 60 s floor. The prewarmer
-  itself falls back to `networkidle` past this deadline so it never
-  wedges.
-
 ### End-to-end UI tests
 
 There are two complementary end-to-end suites under `tests/e2e/`, both
@@ -445,23 +360,22 @@ boot the real server against the bundled fixtures and drive a headed
 Chrome via Playwright.
 
 **`tests/e2e/test_ui.py`** — deterministic golden path. Covers the
-start → live path, prewarm flow, a crashing trace_processor, a hanging
-one, double-click idempotency, the column picker, a metadata SQL
-filter, directory navigation, the theme toggle, and a second server
-with a 2-port pool that exercises the out-of-ports inline error and
-its dismissal. 19/19 checkpoints, ~30 seconds.
+start → live path, a crashing trace_processor, a hanging one,
+double-click idempotency, the column picker, a metadata SQL filter,
+directory navigation, the theme toggle, and a second server with a
+2-port pool that exercises the out-of-ports inline error and its
+dismissal.
 
-**`tests/e2e/test_chaos.py`** — property-style chaos. Random
-Start/Stop/Prewarm bursts across many rows, ten rapid Start clicks on
-one row (regression guard for the in-flight dedup), out-of-band kills
-with SIGKILL / SIGSEGV / SIGTERM that must surface the right chip
-label, a kill mid-prewarm, a hard browser reload mid-life, and a
-small-pool exhaustion + recovery cycle. 21/21 checkpoints, ~50
-seconds. Kill scenarios use `os.kill` against the positive child pid
-with three layered safety guards (pid ≥ 1000, not the test runner's
-ancestor chain, `/proc/<pid>/comm` in an allowlist) so a stale or
-zero pid can never escalate into the catastrophic `kill -<sig> -1`
-process-group form.
+**`tests/e2e/test_chaos.py`** — property-style chaos. Random Start/Stop
+bursts across many rows, ten rapid Start clicks on one row (regression
+guard for the in-flight dedup), out-of-band kills with SIGKILL /
+SIGSEGV / SIGTERM that must surface the right chip label, a hard
+browser reload mid-life, and a small-pool exhaustion + recovery cycle.
+Kill scenarios use `os.kill` against the positive child pid with three
+layered safety guards (pid ≥ 1000, not the test runner's ancestor
+chain, `/proc/<pid>/comm` in an allowlist) so a stale or zero pid can
+never escalate into the catastrophic `kill -<sig> -1` process-group
+form.
 
 ```sh
 python3 -m venv .e2e-venv && .e2e-venv/bin/pip install playwright \
@@ -480,7 +394,6 @@ shared/      Wire-protocol types imported by both sides — the single contract.
 server/      Node + Express API. No UI logic.
   catalog.ts          lists / searches / filters traces, resolves UI-supplied paths
   process_manager.ts  spawns, tracks, and reaps trace_processor_shell children
-  prewarmer.ts        headless Chromium that preloads ui.perfetto.dev
   metadata.ts         optional SQLite metadata: columns, joins, SQL filters, suggest
   ports.ts            TCP port probing + round-robin allocation
   system.ts           host memory / disk / per-process RSS
@@ -496,10 +409,10 @@ fixtures/    A fake trace_processor_shell, sample traces, and a metadata DB.
 
 The browser cannot spawn processes, so a small Node server does it. The SPA
 polls `POST /api/state` for a full snapshot (catalog page + running children +
-host stats); cadence speeds up automatically while a child is starting or
-prewarming. Every trace is identified by its absolute real path — the client
-only ever echoes back keys the server handed out, and every path is
-re-validated against the configured root before use.
+host stats); cadence speeds up automatically while a child is starting. Every
+trace is identified by its absolute real path — the client only ever echoes
+back keys the server handed out, and every path is re-validated against the
+configured root before use.
 
 ## License
 

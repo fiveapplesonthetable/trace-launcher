@@ -43,8 +43,6 @@ const STATUS_VALUES: readonly string[] = [
   'idle',
   'starting',
   'live',
-  'prewarming',
-  'prewarmed',
   'crashed',
 ];
 

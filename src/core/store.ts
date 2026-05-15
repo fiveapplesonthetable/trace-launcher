@@ -9,15 +9,8 @@ import type {
 } from '../../shared/types';
 import {api, ApiError} from './api';
 
-/** The visible runtime state of a catalog row, after rolling in prewarm. */
-export type RowState =
-  | 'idle'
-  | 'starting'
-  | 'live'
-  | 'prewarming'
-  | 'prewarmed'
-  | 'prewarm-failed'
-  | 'crashed';
+/** The visible runtime state of a catalog row. */
+export type RowState = 'idle' | 'starting' | 'live' | 'crashed';
 
 /** Per-trace error surfaced inline in the row (out-of-ports, validation, …). */
 export interface RowError {
@@ -25,19 +18,10 @@ export interface RowError {
   readonly code?: string;
 }
 
-/** Folds child status + prewarm into the single row state the UI displays.
- * `prewarm-failed` surfaces as its own chip rather than silently rolling back
- * to `live` — otherwise a prewarm click flashes 'prewarming' for a fraction
- * of a second on a misconfigured host (no Chromium, sandbox issue, …) and
- * looks like the click did nothing. */
+/** Folds child status into the single row state the UI displays. */
 export function rowStateFor(child: RunningChild | undefined): RowState {
   if (child === undefined) return 'idle';
-  if (child.status === 'starting') return 'starting';
-  if (child.status === 'crashed') return 'crashed';
-  if (child.prewarm === 'prewarming') return 'prewarming';
-  if (child.prewarm === 'prewarmed') return 'prewarmed';
-  if (child.prewarm === 'prewarm-failed') return 'prewarm-failed';
-  return 'live';
+  return child.status;
 }
 
 // The single source of truth for the SPA. Components read its public fields and
@@ -108,7 +92,7 @@ class AppStore {
   sort: SortState | null = null;
   theme: Theme = readTheme();
 
-  /** Trace keys with an in-flight start/stop/prewarm request. */
+  /** Trace keys with an in-flight start/stop request. */
   readonly pending = new Set<string>();
   /** Per-trace inline errors (out-of-ports, validation, …); cleared on retry. */
   readonly errors = new Map<string, RowError>();
@@ -239,10 +223,6 @@ class AppStore {
     return this.withPending([key], () => api.stop(key));
   }
 
-  prewarm(key: string): Promise<void> {
-    return this.withPending([key], () => api.prewarm(key));
-  }
-
   startVisible(): Promise<void> {
     const keys = this.visibleTraceKeys();
     return this.withPending(keys, () => api.startBatch(keys));
@@ -251,11 +231,6 @@ class AppStore {
   stopVisible(): Promise<void> {
     const keys = this.visibleTraceKeys();
     return this.withPending(keys, () => api.stopBatch(keys));
-  }
-
-  prewarmVisible(): Promise<void> {
-    const keys = this.visibleTraceKeys();
-    return this.withPending(keys, () => api.prewarmBatch(keys));
   }
 
   /** How many *visible* rows are currently live — i.e. have an openable
@@ -422,9 +397,7 @@ class AppStore {
     window.clearTimeout(this.pollTimer);
     const settling =
       this.pending.size > 0 ||
-      (this.state?.running ?? []).some(
-        (c) => c.status === 'starting' || c.prewarm === 'prewarming',
-      );
+      (this.state?.running ?? []).some((c) => c.status === 'starting');
     const delay = settling ? ACTIVE_POLL_MS : IDLE_POLL_MS;
     this.pollTimer = window.setTimeout(() => void this.refresh(), delay);
   }
