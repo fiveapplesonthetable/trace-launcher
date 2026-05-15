@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <title>Trace Launcher</title>
+    <!-- Roboto matches the Perfetto UI typeface so the launcher and
+         ui.perfetto.dev share visual identity. Preconnect first so the
+         font request is on the network as soon as the parser sees the
+         <link>; font-display=swap means layout is never blocked on the
+         font, only re-rendered once it arrives. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
+    />
     <script>
       // Apply the saved theme before first paint to avoid a flash.
       try {

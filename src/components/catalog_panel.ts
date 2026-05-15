@@ -71,6 +71,15 @@ class Breadcrumb implements m.ClassComponent {
   }
 }
 
+/**
+ * The thin meta-row that sits immediately above the table: the
+ * absolute trace path on the left, a short "5 traces · 121 KiB" digest
+ * in the middle, and the Columns visibility picker on the right.
+ *
+ * Putting Columns here puts it next to what it controls — the table —
+ * instead of cluttering the search/filter row above. The search bar
+ * can then span the full width.
+ */
 class DirInfo implements m.ClassComponent {
   view(): m.Children {
     const catalog = store.state?.catalog;
@@ -84,10 +93,6 @@ class DirInfo implements m.ClassComponent {
           : `${catalog.dirs.length} directories`,
       );
     }
-    // When a search or structured filter narrows the view we show the
-    // count as "shown / total scanned" so the user can tell at a glance
-    // how many traces the query is hiding. With no narrowing in play
-    // we just show the bare count.
     const shown = catalog.traces.length;
     const total = catalog.unfilteredCount;
     const narrowed = total > 0 && shown < total;
@@ -104,6 +109,7 @@ class DirInfo implements m.ClassComponent {
         m(MiddleEllipsis, {text: catalog.absPath, endChars: 22}),
       ]),
       m('.pf-tl-dirinfo__facts', facts.join('  ·  ')),
+      m('.pf-tl-dirinfo__tools', m(ColumnPicker)),
     ]);
   }
 }
@@ -518,10 +524,10 @@ export class CatalogPanel implements m.ClassComponent {
   }
 
   private toolbar(): m.Children {
-    return m('.pf-tl-toolbar', [
-      m(SearchFilterBar),
-      m('.pf-tl-toolbar__tools', m(ColumnPicker)),
-    ]);
+    // Search bar gets the whole row now — the table-column-visibility
+    // Columns picker has moved down to DirInfo, right next to the
+    // table it controls.
+    return m('.pf-tl-toolbar', m(SearchFilterBar));
   }
 
   private header(columns: readonly CatalogColumn[]): m.Children {
