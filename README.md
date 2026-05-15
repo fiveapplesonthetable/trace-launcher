@@ -131,6 +131,23 @@ npm run check        # typecheck + test + build
 npm run seed         # rebuild fixtures/metadata.db
 ```
 
+### End-to-end UI test
+
+`tests/e2e/test_ui.py` boots the real server against the fixtures, drives a
+headed Chrome via Playwright, and asserts against the DOM. It covers the start
+→ live path, a crashing trace_processor, a hanging one, double-click
+idempotency, the column picker, a metadata SQL filter, directory navigation,
+and the theme toggle.
+
+```sh
+python3 -m venv .e2e-venv && .e2e-venv/bin/pip install playwright \
+  && .e2e-venv/bin/playwright install chromium
+npm run build
+TL_E2E_HEADLESS=1 .e2e-venv/bin/python tests/e2e/test_ui.py
+```
+
+Drop `TL_E2E_HEADLESS=1` to run it headed under a recorder.
+
 ## Architecture
 
 ```
