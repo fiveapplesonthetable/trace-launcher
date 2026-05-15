@@ -742,6 +742,19 @@ code {
   min-width: 0;
 }
 
+.pf-tl-name-cell__stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.pf-tl-name-cell__parent {
+  font-size: 10.5px;
+  color: var(--pf-color-text-muted);
+  margin-bottom: 1px;
+}
+
 .pf-tl-name-cell__text {
   font-weight: 500;
   min-width: 0;

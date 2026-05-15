@@ -57,7 +57,8 @@ Options:
   --batch-concurrency <n>    workers for "Start all shown" / "Prewarm all shown"
                              (default: clamp(nproc, 2, 8))
   --max-results <n>          max traces shown per page; 0 = unlimited (default 5000)
-  --recursive-search         search recursively under --traces-dir
+  --recursive-search         search recursively under --traces-dir (default)
+  --no-recursive-search      scope search to the current directory only
 
 Metadata (optional — joins a SQLite table to the trace list):
   --metadata-db <path>       SQLite database with a row of metadata per trace
@@ -98,7 +99,8 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
         'tp-port-count': {type: 'string', default: '4096'},
         'batch-concurrency': {type: 'string'},
         'max-results': {type: 'string', default: '5000'},
-        'recursive-search': {type: 'boolean', default: false},
+        'recursive-search': {type: 'boolean', default: true},
+        'no-recursive-search': {type: 'boolean', default: false},
         'metadata-db': {type: 'string'},
         'metadata-table': {type: 'string'},
         'metadata-key-column': {type: 'string'},
@@ -190,7 +192,8 @@ export function parseLaunchOptions(argv: readonly string[]): LaunchOptions {
     tpPortCount,
     batchConcurrency,
     maxResults,
-    recursiveSearch: values['recursive-search'] === true,
+    // Recursive search defaults on; an explicit --no-recursive-search wins.
+    recursiveSearch: values['no-recursive-search'] !== true,
     metadataDb,
     metadataTable,
     metadataKeyColumn:

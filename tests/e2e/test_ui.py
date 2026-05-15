@@ -336,7 +336,13 @@ def run_scenarios(page: Page) -> None:
     # the context level — every open() still spawns a Page object that we
     # observe via the 'page' event, but the underlying request is aborted
     # so we never actually hit the network.
-    live_count = page.locator(".pf-tl-state--live").count()
+    #
+    # Openable rows are every row whose backing child holds a bound port:
+    # the UI states live, prewarming, and prewarmed (server status='live'
+    # in all three, with prewarm/prewarmed layered on the same port).
+    live_count = page.locator(
+        ".pf-tl-state--live, .pf-tl-state--prewarming, .pf-tl-state--prewarmed"
+    ).count()
     context = page.context
     opened_pages: list[Page] = []
     on_new_page = lambda new: opened_pages.append(new)  # noqa: E731

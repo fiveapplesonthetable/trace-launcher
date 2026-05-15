@@ -4,7 +4,6 @@ import type {
   AppState,
   CatalogColumn,
   CatalogFilter,
-  MetadataValue,
   RunningChild,
   TraceEntry,
 } from '../../shared/types';
@@ -86,18 +85,6 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Orders two metadata cells, sorting empty values last. */
-function compareValues(
-  a: MetadataValue | undefined,
-  b: MetadataValue | undefined,
-): number {
-  const aEmpty = a === null || a === undefined;
-  const bEmpty = b === null || b === undefined;
-  if (aEmpty || bEmpty) return aEmpty === bEmpty ? 0 : aEmpty ? 1 : -1;
-  if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b));
-}
-
 class AppStore {
   state: AppState | null = null;
   error: string | null = null;
@@ -107,7 +94,12 @@ class AppStore {
   dir = '';
   query = '';
   filters: readonly CatalogFilter[] = [];
-  sort: SortState = {column: 'name', direction: 'asc'};
+  /**
+   * Sort is null until the user clicks a column header — null means
+   * "let the server pick the natural order" (breadth-first by depth,
+   * alphabetical by name). Once set, the server applies it verbatim.
+   */
+  sort: SortState | null = null;
   theme: Theme = readTheme();
 
   /** Trace keys with an in-flight start/stop/prewarm request. */
@@ -131,7 +123,12 @@ class AppStore {
 
   async refresh(): Promise<void> {
     const seq = ++this.requestSeq;
-    const query = {dir: this.dir, query: this.query, filters: this.filters};
+    const query = {
+      dir: this.dir,
+      query: this.query,
+      filters: this.filters,
+      ...(this.sort !== null ? {sort: this.sort} : {}),
+    };
     try {
       const next = await api.getState(query);
       if (seq !== this.requestSeq) return; // superseded by a newer request
@@ -180,17 +177,28 @@ class AppStore {
     void this.refresh();
   }
 
-  // --- view preferences (no network) ---------------------------------------
+  // --- view preferences ----------------------------------------------------
 
-  /** Sorts by `column`, toggling direction when it is already the sort key. */
+  /**
+   * Cycles through "no explicit sort" → asc → desc → no explicit sort, so
+   * the column header is a three-state toggle: a third click on the same
+   * header drops back to the server's natural breadth-first order. Picking
+   * a different column always starts from a sensible direction (descending
+   * for size / modified, ascending for everything else).
+   */
   setSort(column: string): void {
-    if (this.sort.column === column) {
-      const direction = this.sort.direction === 'asc' ? 'desc' : 'asc';
-      this.sort = {column, direction};
+    const current = this.sort;
+    if (current !== null && current.column === column) {
+      if (current.direction === 'asc') {
+        this.sort = {column, direction: 'desc'};
+      } else {
+        this.sort = null;
+      }
     } else {
       const descFirst = column === 'size' || column === 'modified';
       this.sort = {column, direction: descFirst ? 'desc' : 'asc'};
     }
+    void this.refresh();
   }
 
   toggleColumn(id: string): void {
@@ -329,13 +337,15 @@ class AppStore {
     return this.effectiveColumns().has(id);
   }
 
-  /** Catalog traces after status filtering, in the user's sort order. */
+  /**
+   * Catalog traces after status filtering. Sort order is owned server-side:
+   * the rows come back from `/api/state` already in the requested order.
+   * The status filter stays here because it depends on the per-trace
+   * running child state — a join the server can't do without us echoing
+   * back its own `running` array.
+   */
   sortedTraces(): readonly TraceEntry[] {
-    const traces = [...this.clientFilteredTraces()];
-    const {column, direction} = this.sort;
-    const sign = direction === 'asc' ? 1 : -1;
-    traces.sort((a, b) => sign * this.compare(column, a, b));
-    return traces;
+    return this.clientFilteredTraces();
   }
 
   /**
@@ -358,24 +368,6 @@ class AppStore {
   }
 
   // --- internals -----------------------------------------------------------
-
-  private compare(column: string, a: TraceEntry, b: TraceEntry): number {
-    switch (column) {
-      case 'name':
-        return a.name.localeCompare(b.name);
-      case 'rel':
-        return a.rel.localeCompare(b.rel);
-      case 'size':
-        return a.size - b.size;
-      case 'modified':
-        return a.mtimeMs - b.mtimeMs;
-      default: {
-        if (!column.startsWith('meta:')) return 0;
-        const field = column.slice('meta:'.length);
-        return compareValues(a.metadata?.[field], b.metadata?.[field]);
-      }
-    }
-  }
 
   private effectiveColumns(): Set<string> {
     if (this.visibleColumns !== null) return new Set(this.visibleColumns);

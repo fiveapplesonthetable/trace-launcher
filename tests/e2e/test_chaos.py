@@ -248,14 +248,43 @@ def _stop_all_via_api() -> None:
         pass
 
 
+def _port_free(port: int, host: str = "127.0.0.1") -> bool:
+    """True iff `port` is currently *not* accepting connections. Mirrors the
+    server's allocator probe so we can wait for the OS-level port reclaim
+    that follows a SIGTERM (the children map clears immediately on stop,
+    but the kernel keeps the port bound until the python http.server fully
+    exits, up to KILL_GRACE_MS = 5 s later)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.2)
+    try:
+        s.connect((host, port))
+        return False
+    except OSError:
+        return True
+    finally:
+        s.close()
+
+
 def _wait_zero_active(timeout: float = 12.0) -> bool:
-    """Block until the server reports zero active children. SIGTERM grace is
-    5 s in the server (KILL_GRACE_MS), so allow comfortably more than that."""
+    """Block until the server reports zero active children *and* every
+    trace_processor port in the configured pool is actually free at the OS
+    level. The latter is necessary because stop() empties the children map
+    immediately while the OS keeps the port bound until SIGTERM (or the
+    KILL_GRACE_MS SIGKILL backstop) completes. Without this, the very next
+    Start in a chaos scenario races the previous child's port reclaim and
+    fails with OUT_OF_PORTS — and the test sees a row stuck idle."""
+    pool_ports = list(range(TP_BASE, TP_BASE + TP_COUNT))
+
+    def _settled() -> bool:
+        if _count_active_children() != 0:
+            return False
+        return all(_port_free(p) for p in pool_ports)
+
     return wait_until(
-        lambda: _count_active_children() == 0,
+        _settled,
         timeout=timeout,
         interval=0.25,
-        label="server has zero active children",
+        label="server idle + every pool port reclaimed",
     )
 
 

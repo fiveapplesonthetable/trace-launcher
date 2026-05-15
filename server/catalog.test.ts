@@ -157,3 +157,56 @@ test('list applies a path filter to a recursive search', (t) => {
     ['nested/gamma.trace.gz'],
   );
 });
+
+test('list searches by AND-substring tokens against the rel path', (t) => {
+  const root = tmpDir(t, 'tl-catalog-search-');
+  fs.mkdirSync(path.join(root, '2026-05'));
+  fs.mkdirSync(path.join(root, 'cuttlefish'));
+  fs.writeFileSync(path.join(root, '2026-05', 'android-boot.pftrace'), 'a');
+  fs.writeFileSync(path.join(root, '2026-05', 'chrome-start.pftrace'), 'b');
+  fs.writeFileSync(path.join(root, 'cuttlefish', 'boot-fail.pftrace'), 'c');
+  const catalog = new Catalog(root, [], 5000, true);
+  // Single token hits files at any depth whose rel path contains it.
+  const oneToken = catalog.list('boot', '', []);
+  assert.deepEqual(
+    oneToken.traces.map((t) => t.rel).sort(),
+    ['2026-05/android-boot.pftrace', 'cuttlefish/boot-fail.pftrace'].sort(),
+  );
+  // Two tokens are ANDed; order does not matter, both must appear somewhere.
+  const both = catalog.list('boot 2026', '', []);
+  assert.deepEqual(
+    both.traces.map((t) => t.rel),
+    ['2026-05/android-boot.pftrace'],
+  );
+  // A token that matches nothing kills the result, even with other matches.
+  const miss = catalog.list('boot xenomorph', '', []);
+  assert.equal(miss.traces.length, 0);
+});
+
+test('list returns natural breadth-first order when no sort is given', (t) => {
+  const root = tmpDir(t, 'tl-catalog-bfs-');
+  fs.writeFileSync(path.join(root, 'root.pftrace'), 'r');
+  fs.mkdirSync(path.join(root, 'deep'));
+  fs.mkdirSync(path.join(root, 'deep', 'deeper'));
+  fs.writeFileSync(path.join(root, 'deep', 'mid.pftrace'), 'm');
+  fs.writeFileSync(path.join(root, 'deep', 'deeper', 'leaf.pftrace'), 'l');
+  const catalog = new Catalog(root, [], 5000, true);
+  const page = catalog.list('pftrace', '', []);
+  // Shallowest first, then by basename.
+  assert.deepEqual(
+    page.traces.map((t) => t.rel),
+    ['root.pftrace', 'deep/mid.pftrace', 'deep/deeper/leaf.pftrace'],
+  );
+});
+
+test('list applies an explicit sort spec verbatim', (t) => {
+  const root = tmpDir(t, 'tl-catalog-sort-');
+  fs.writeFileSync(path.join(root, 'a.pftrace'), 'xxx');     // 3 bytes
+  fs.writeFileSync(path.join(root, 'b.pftrace'), 'xx');      // 2 bytes
+  fs.writeFileSync(path.join(root, 'c.pftrace'), 'x');       // 1 byte
+  const catalog = new Catalog(root, [], 5000, true);
+  const asc = catalog.list('', '', [], {column: 'size', direction: 'asc'});
+  assert.deepEqual(asc.traces.map((t) => t.name), ['c.pftrace', 'b.pftrace', 'a.pftrace']);
+  const desc = catalog.list('', '', [], {column: 'size', direction: 'desc'});
+  assert.deepEqual(desc.traces.map((t) => t.name), ['a.pftrace', 'b.pftrace', 'c.pftrace']);
+});

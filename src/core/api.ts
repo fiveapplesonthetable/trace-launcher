@@ -56,11 +56,14 @@ function postJson<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-/** Selects which catalog page POST /api/state should return. */
+/** Selects which catalog page POST /api/state should return. The optional
+ * sort is only set once the user has clicked a column header; when absent
+ * the server falls back to its breadth-first natural order. */
 export interface StateQuery {
   readonly dir: string;
   readonly query: string;
   readonly filters: readonly CatalogFilter[];
+  readonly sort?: {readonly column: string; readonly direction: 'asc' | 'desc'};
 }
 
 function discard(): void {}

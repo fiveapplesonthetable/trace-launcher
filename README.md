@@ -44,22 +44,36 @@ server-rendered HTML.
   (Start, Cancel, Stop, Retry, Prewarm, Open in Perfetto) so columns line up
   no matter what state a row is in. There is no separate "running" panel to
   keep in sync.
-- **Browse, search, sort.** Walk the trace directory or search by name —
-  within the current directory, or recursively under the root with
-  `--recursive-search`. Sort on any column.
+- **Browse, smart-search, sort — all server-side.** Walk the directory
+  tree by clicking folders, or just type. The search is a case-insensitive
+  AND-substring match across the full path — `android boot` finds
+  `2026-05/android-boot.pftrace` and `cuttlefish/boot-android.pftrace`
+  alike, regardless of where each token lands in the path. Recursive
+  search is on by default; pass `--no-recursive-search` to scope it to
+  the current directory. Sort by clicking any column header; a third
+  click drops back to the server's *natural* breadth-first order
+  (shallowest paths first), so a fresh recursive view stays scannable.
 - **Filter on anything, including runtime state.** Structured filters on
   path, size, every column of the optional metadata DB, and on the live
   status (`idle`, `starting`, `live`, `prewarming`, `prewarmed`, `crashed`).
   Metadata filters compile to parameterised SQL; status filters apply
-  client-side. Search and filters cover every state uniformly.
+  client-side because they depend on live process state. Search and
+  filters cover every state uniformly.
 - **One-click launch with deep link.** Starts are idempotent — a double-click
   never spawns two servers. The row shows the bound port and gives you a
   ui.perfetto.dev link wired to that port.
 - **Prewarm.** A second per-row button loads ui.perfetto.dev against the
   trace in a headless Chromium so the trace_processor caches the UI's
   initial query burst. When you later open the deep link yourself, the
-  viewer renders without a wait. There's also a "Prewarm all shown" batch
-  action that honours the active filter.
+  viewer renders without a wait.
+- **Batch actions — and they run in parallel.** "Start all shown",
+  "Prewarm all shown", "Open all shown", and "Stop all shown" each
+  honour the active filter and search. The first three run server-side
+  with up to `nproc` workers in flight at once (configurable via
+  `--batch-concurrency`), so opening a directory of 200 traces is bound
+  by the prewarmer + port allocator, not a serial for-loop. "Open all
+  shown" spawns one ui.perfetto.dev tab per live row via the anchor-click
+  idiom — survives popup blockers that reject `window.open()` in a loop.
 - **Honest status.** Every child is shown as `starting`, `live`,
   `prewarming`, `prewarmed`, or `crashed` (with its exit code / signal) right
   inside its catalog row. A crash is never silent; retry or dismiss it inline.
@@ -70,6 +84,11 @@ server-rendered HTML.
 - **Optional metadata DB.** Join a SQLite table of per-trace metadata
   (device, duration, owner, …) onto the catalog for display and filtering,
   with distinct-value autocomplete in the filter editor.
+- **Scales to thousands of rows.** Every row the server returns is in the
+  DOM — no client-side cap and no "Show more" button. Off-screen rows are
+  skipped from layout + paint by the browser via `content-visibility:
+  auto`, so a 5000-row recursive view scrolls smoothly without a
+  hand-rolled virtual scroller.
 - **Configurable columns**, **dark / light themes**, debounced search that
   skips per-keystroke redraws, and inline progress on every start / stop
   action.
@@ -233,7 +252,8 @@ Common:
   --bind <addr>              address for the UI + backend servers
                              (default 127.0.0.1 — local only)
   --port <n>                 port for the UI + API (default 9002)
-  --recursive-search         search recursively under --traces-dir
+  --no-recursive-search      scope search to the current directory only.
+                             Recursive search is the default.
   --max-results <n>          max traces shown per page; 0 = unlimited
                              (default 5000)
 
@@ -246,6 +266,8 @@ Backend trace_processor port pool:
   --tp-port-base <n>         first backend trace_processor port
                              (default 19000)
   --tp-port-count <n>        size of the backend port range (default 4096)
+  --batch-concurrency <n>    workers in flight for "Start all shown" /
+                             "Prewarm all shown" (default: clamp(nproc, 2, 8))
 
 Metadata (optional — joins a SQLite table to the trace list):
   --metadata-db <path>       SQLite database with a row of metadata per trace

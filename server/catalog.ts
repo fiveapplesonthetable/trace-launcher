@@ -8,6 +8,7 @@ import type {
   CatalogPage,
   DirEntry,
   FilterOp,
+  SortSpec,
   TraceEntry,
 } from '../shared/types';
 import type {MetadataStore} from './metadata';
@@ -163,21 +164,34 @@ export class Catalog {
   }
 
   /**
-   * Lists one page of the catalog for a search query, directory, and set of
-   * structured filters. Candidates are gathered first, then filtered, then
-   * sorted, then capped — so a filter can never be hidden by truncation.
+   * Lists one page of the catalog for a search query, directory, set of
+   * structured filters, and an optional sort spec. Candidates are gathered
+   * first, then filtered, then sorted, then capped — so a filter can never
+   * be hidden by truncation.
+   *
+   * Search tokens: the query is split on whitespace and every token must
+   * appear as a case-insensitive substring of `trace.rel` (the path
+   * relative to the root). So "android boot" finds android-boot.pftrace
+   * sitting at any depth, and "2026 trace" finds any 2026/*.trace inside
+   * a year-stamped subtree. No fuzzy matching — predictable substring AND.
+   *
+   * Sort: when `sort` is omitted, results come back in *natural* order —
+   * breadth-first by directory depth, then alphabetical by basename. This
+   * keeps a deep recursive catalog scannable on first load. Explicit
+   * sorts (a column-header click on the client) flow through verbatim.
    */
   list(
     query: string,
     relDir: string,
     filters: readonly CatalogFilter[] = [],
+    sort?: SortSpec,
   ): CatalogPage {
-    const needle = query.trim().toLowerCase();
-    const browse = this.gather(needle, relDir);
+    const tokens = tokenize(query);
+    const browse = this.gather(tokens, relDir);
 
     let entries = browse.candidates.map((abs) => this.entry(abs));
     entries = this.applyFilters(entries, filters);
-    entries.sort((a, b) => a.rel.localeCompare(b.rel));
+    entries = this.applySort(entries, sort);
 
     const truncated = this.maxResults > 0 && entries.length > this.maxResults;
     const traces = truncated ? entries.slice(0, this.maxResults) : entries;
@@ -197,9 +211,16 @@ export class Catalog {
 
   // --- internals -------------------------------------------------------------
 
-  /** Walks the filesystem (or the allow-list) to collect candidate traces. */
+  /** Walks the filesystem (or the allow-list) to collect candidate traces.
+   *
+   * Recursive search is enabled iff `this.recursiveSearch` is set AND the
+   * query is non-empty. With a query the visit walks the whole subtree
+   * rooted at the current directory and accepts only files whose `rel`
+   * path matches every search token as a case-insensitive substring.
+   * Without a query the catalog stays scoped to the current directory and
+   * lists its sub-directories so the user can navigate manually. */
   private gather(
-    needle: string,
+    tokens: readonly string[],
     relDir: string,
   ): {
     candidates: string[];
@@ -209,27 +230,27 @@ export class Catalog {
     parent: string | null;
   } {
     if (this.allowList !== null) {
-      const candidates = this.allowList.filter(
-        (p) => needle === '' || path.basename(p).toLowerCase().includes(needle),
+      const candidates = this.allowList.filter((p) =>
+        tokensMatch(tokens, this.rel(p)),
       );
       return {candidates, dirs: [], dir: '', absPath: this.root, parent: null};
     }
 
     const currentDir = this.resolveDir(relDir);
-    const recursive = needle !== '' && this.recursiveSearch;
+    const searching = tokens.length > 0;
+    const recursive = searching && this.recursiveSearch;
 
     // Sub-directories are only offered while plainly browsing; a search result
     // is a flat list of matching files.
-    const dirs: DirEntry[] =
-      needle === ''
-        ? readDirEntries(currentDir)
-            .filter((d) => d.isDirectory())
-            .map((d) => ({
-              rel: this.rel(path.join(currentDir, d.name)),
-              name: d.name,
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name))
-        : [];
+    const dirs: DirEntry[] = searching
+      ? []
+      : readDirEntries(currentDir)
+          .filter((d) => d.isDirectory())
+          .map((d) => ({
+            rel: this.rel(path.join(currentDir, d.name)),
+            name: d.name,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
 
     const candidates: string[] = [];
     const visit = (dir: string): void => {
@@ -240,7 +261,7 @@ export class Catalog {
           continue;
         }
         if (!entry.isFile() || !looksLikeTrace(entry.name)) continue;
-        if (needle !== '' && !entry.name.toLowerCase().includes(needle)) continue;
+        if (searching && !tokensMatch(tokens, this.rel(full))) continue;
         candidates.push(full);
       }
     };
@@ -254,6 +275,48 @@ export class Catalog {
       parent:
         currentDir === this.root ? null : this.rel(path.dirname(currentDir)),
     };
+  }
+
+  /**
+   * Orders a list of entries by an optional sort spec. When `sort` is
+   * absent the natural order is breadth-first: shallower paths come first,
+   * ties broken by basename. This is the right default for a recursive
+   * search hit-list — the user sees top-level matches before deep ones.
+   */
+  private applySort(
+    entries: TraceEntry[],
+    sort: SortSpec | undefined,
+  ): TraceEntry[] {
+    const sorted = [...entries];
+    if (sort === undefined) {
+      sorted.sort(
+        (a, b) =>
+          depth(a.rel) - depth(b.rel) || a.name.localeCompare(b.name),
+      );
+      return sorted;
+    }
+    const sign = sort.direction === 'asc' ? 1 : -1;
+    sorted.sort((a, b) => sign * this.compareForSort(a, b, sort.column));
+    return sorted;
+  }
+
+  /** One column's worth of comparison logic. Stable across rendering. */
+  private compareForSort(a: TraceEntry, b: TraceEntry, column: string): number {
+    if (column === 'name') return a.name.localeCompare(b.name);
+    if (column === 'rel') return a.rel.localeCompare(b.rel);
+    if (column === 'size') return a.size - b.size;
+    if (column === 'modified') return a.mtimeMs - b.mtimeMs;
+    if (column.startsWith('meta:')) {
+      const key = column.slice('meta:'.length);
+      const av = a.metadata?.[key];
+      const bv = b.metadata?.[key];
+      if (av === bv) return 0;
+      if (av === undefined || av === null) return 1; // empties sink
+      if (bv === undefined || bv === null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+      return String(av).localeCompare(String(bv));
+    }
+    return a.name.localeCompare(b.name);
   }
 
   /** Applies file-column and metadata-column filters to a list of entries. */
@@ -305,6 +368,36 @@ export class Catalog {
     const metadata = this.metadata.lookup({abs, rel, name});
     return metadata === undefined ? base : {...base, metadata};
   }
+}
+
+/** Splits a search query into lowercase substring tokens. Whitespace is the
+ * only separator; quotes and other punctuation are passed through inside a
+ * token so users can grep for things like "_2026-05_" or "foo.bar". */
+function tokenize(query: string): readonly string[] {
+  return query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((tok) => tok.length > 0);
+}
+
+/** True iff every token appears as a substring of `path` (case-insensitive).
+ * `path` is the trace's rel path so a token can match the directory chain
+ * just as well as the filename — "android boot" hits android/boot.pftrace,
+ * boot/android.pftrace, and android-boot.pftrace alike. */
+function tokensMatch(tokens: readonly string[], targetPath: string): boolean {
+  if (tokens.length === 0) return true;
+  const haystack = targetPath.toLowerCase();
+  for (const t of tokens) if (!haystack.includes(t)) return false;
+  return true;
+}
+
+/** Directory depth of a rel path: root files = 0, root/a = 1, root/a/b = 2. */
+function depth(relPath: string): number {
+  if (relPath === '') return 0;
+  let n = 0;
+  for (let i = 0; i < relPath.length; i++) if (relPath[i] === '/') n++;
+  return n;
 }
 
 function statOrNull(p: string): fs.Stats | null {

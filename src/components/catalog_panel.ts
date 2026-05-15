@@ -165,6 +165,15 @@ class TraceRow
     const pending = store.isPending(trace.key);
     const busy = pending || child?.status === 'starting';
 
+    // When the row's rel path includes a directory prefix (recursive search
+    // hit, or browsing showed deep results), surface that prefix above the
+    // basename so the user can place the file in its tree without losing
+    // basename readability. Plain in-directory listings keep the original
+    // basename-only layout.
+    const parentDir = trace.rel.includes('/')
+      ? trace.rel.slice(0, trace.rel.lastIndexOf('/'))
+      : '';
+
     return m(`tr.pf-tl-tr.pf-tl-tr--trace${busy ? '.pf-tl-tr--busy' : ''}`, [
       m(
         'td.pf-tl-td.pf-tl-td--actions',
@@ -174,11 +183,20 @@ class TraceRow
         'td.pf-tl-td.pf-tl-td--name',
         m('.pf-tl-name-cell', [
           m('.pf-tl-row-icon', m(Icon, {icon: 'file', size: 16})),
-          m(MiddleEllipsis, {
-            text: trace.name,
-            endChars: 14,
-            className: 'pf-tl-name-cell__text',
-          }),
+          m('.pf-tl-name-cell__stack', [
+            parentDir !== ''
+              ? m(
+                  '.pf-tl-name-cell__parent',
+                  {title: parentDir},
+                  m(MiddleEllipsis, {text: parentDir, endChars: 18}),
+                )
+              : null,
+            m(MiddleEllipsis, {
+              text: trace.name,
+              endChars: 14,
+              className: 'pf-tl-name-cell__text',
+            }),
+          ]),
         ]),
       ),
       ...columns.map((col) => m('td.pf-tl-td', this.cell(trace, col))),
@@ -514,9 +532,10 @@ export class CatalogPanel implements m.ClassComponent {
 
   private header(columns: readonly CatalogColumn[]): m.Children {
     const sortHeader = (id: string, label: string): m.Children => {
-      const active = store.sort.column === id;
+      const sort = store.sort;
+      const active = sort !== null && sort.column === id;
       const ariaSort = active
-        ? store.sort.direction === 'asc' ? 'ascending' : 'descending'
+        ? sort.direction === 'asc' ? 'ascending' : 'descending'
         : 'none';
       const activate = (): void => store.setSort(id);
       return m(
@@ -537,7 +556,7 @@ export class CatalogPanel implements m.ClassComponent {
           m('span', label),
           active
             ? m(Icon, {
-                icon: store.sort.direction === 'asc' ? 'arrowUp' : 'arrowDown',
+                icon: sort.direction === 'asc' ? 'arrowUp' : 'arrowDown',
                 size: 14,
               })
             : null,

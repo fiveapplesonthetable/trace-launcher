@@ -42,10 +42,10 @@ export function createApiRouter(deps: ApiDeps) {
   // The UI polls this; the body selects which catalog page to return.
   router.post('/state', async (req, res) => {
     try {
-      const {dir, query, filters} = readStateRequest(req.body);
+      const {dir, query, filters, sort} = readStateRequest(req.body);
       res.json({
         config,
-        catalog: catalog.list(query, dir, filters),
+        catalog: catalog.list(query, dir, filters, sort),
         running: await processes.snapshot(),
         system: systemStats(catalog.root),
       });
@@ -171,7 +171,18 @@ function readStateRequest(body: unknown): StateRequest {
     dir: typeof obj.dir === 'string' ? obj.dir : '',
     query: typeof obj.query === 'string' ? obj.query : '',
     filters: Array.isArray(obj.filters) ? obj.filters.filter(isFilter) : [],
+    sort: isSort(obj.sort) ? obj.sort : undefined,
   };
+}
+
+function isSort(value: unknown): value is StateRequest['sort'] {
+  if (value === null || typeof value !== 'object') return false;
+  const s = value as Record<string, unknown>;
+  return (
+    typeof s.column === 'string' &&
+    s.column.length > 0 &&
+    (s.direction === 'asc' || s.direction === 'desc')
+  );
 }
 
 function isFilter(value: unknown): value is CatalogFilter {

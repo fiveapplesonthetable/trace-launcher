@@ -169,11 +169,25 @@ export interface AppState {
 
 // --- requests / responses ----------------------------------------------------
 
+/**
+ * How to order the catalog results. Optional in the state request: when
+ * omitted the server falls back to its "natural" order — breadth-first by
+ * directory depth, then alphabetical by basename. This makes the initial
+ * load of a deep recursive catalog readable (shallowest files first), and
+ * lets the client send a sort spec only once the user has clicked a column
+ * header.
+ */
+export interface SortSpec {
+  readonly column: string;
+  readonly direction: 'asc' | 'desc';
+}
+
 /** Body of POST /api/state — selects which catalog page to return. */
 export interface StateRequest {
   readonly dir: string;
   readonly query: string;
   readonly filters: readonly CatalogFilter[];
+  readonly sort?: SortSpec;
 }
 
 /** Response of GET /api/metadata/suggest — autocomplete values for a column. */
