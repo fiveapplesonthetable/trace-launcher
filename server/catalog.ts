@@ -180,16 +180,18 @@ export class Catalog {
    * keeps a deep recursive catalog scannable on first load. Explicit
    * sorts (a column-header click on the client) flow through verbatim.
    */
-  list(
+  async list(
     query: string,
     relDir: string,
     filters: readonly CatalogFilter[] = [],
     sort?: SortSpec,
-  ): CatalogPage {
+  ): Promise<CatalogPage> {
     const tokens = tokenize(query);
-    const browse = this.gather(tokens, relDir);
+    const browse = await this.gather(tokens, relDir);
 
-    let entries = browse.candidates.map((abs) => this.entry(abs));
+    let entries = await Promise.all(
+      browse.candidates.map((abs) => this.entry(abs)),
+    );
     entries = this.applyFilters(entries, filters);
     entries = this.applySort(entries, sort);
 
@@ -219,11 +221,17 @@ export class Catalog {
    * rooted at the current directory and accepts only files whose `rel`
    * path matches every search token as a case-insensitive substring.
    * Without a query the catalog stays scoped to the current directory and
-   * lists its sub-directories so the user can navigate manually. */
-  private gather(
+   * lists its sub-directories so the user can navigate manually.
+   *
+   * The whole walk uses async `fs.promises` so a large traces tree does
+   * not pin the event loop. Each directory's children are listed in a
+   * single `readdir`; sub-directories are fanned out with `Promise.all`
+   * so the libuv worker pool can do real work in parallel — bounded by
+   * the pool size (UV_THREADPOOL_SIZE, 4 by default). */
+  private async gather(
     tokens: readonly string[],
     relDir: string,
-  ): {
+  ): Promise<{
     candidates: string[];
     /** Trace files scanned in this view (pre-search). */
     scanned: number;
@@ -231,7 +239,7 @@ export class Catalog {
     dir: string;
     absPath: string;
     parent: string | null;
-  } {
+  }> {
     if (this.allowList !== null) {
       const candidates = this.allowList.filter((p) =>
         tokensMatch(tokens, this.rel(p)),
@@ -254,7 +262,7 @@ export class Catalog {
     // is a flat list of matching files.
     const dirs: DirEntry[] = searching
       ? []
-      : readDirEntries(currentDir)
+      : (await readDirEntriesAsync(currentDir))
           .filter((d) => d.isDirectory())
           .map((d) => ({
             rel: this.rel(path.join(currentDir, d.name)),
@@ -264,11 +272,13 @@ export class Catalog {
 
     const candidates: string[] = [];
     let scanned = 0;
-    const visit = (dir: string): void => {
-      for (const entry of readDirEntries(dir)) {
+    const visit = async (dir: string): Promise<void> => {
+      const entries = await readDirEntriesAsync(dir);
+      const subdirs: string[] = [];
+      for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (recursive) visit(full);
+          if (recursive) subdirs.push(full);
           continue;
         }
         if (!entry.isFile() || !looksLikeTrace(entry.name)) continue;
@@ -276,8 +286,11 @@ export class Catalog {
         if (searching && !tokensMatch(tokens, this.rel(full))) continue;
         candidates.push(full);
       }
+      if (subdirs.length > 0) {
+        await Promise.all(subdirs.map((d) => visit(d)));
+      }
     };
-    visit(recursive ? this.root : currentDir);
+    await visit(recursive ? this.root : currentDir);
 
     return {
       candidates,
@@ -370,8 +383,11 @@ export class Catalog {
     return abs === this.root || abs.startsWith(this.root + path.sep);
   }
 
-  private entry(abs: string): TraceEntry {
-    const stat = statOrNull(abs);
+  private async entry(abs: string): Promise<TraceEntry> {
+    // statOrNullAsync hands off to libuv so the per-candidate `stat`
+    // doesn't pin the event loop on a directory with thousands of
+    // matches. Promise.all in the caller fans them out concurrently.
+    const stat = await statOrNullAsync(abs);
     const rel = this.rel(abs);
     const name = path.basename(abs);
     const base: TraceEntry = {
@@ -382,6 +398,9 @@ export class Catalog {
       mtimeMs: stat?.mtimeMs ?? 0,
     };
     if (this.metadata === undefined) return base;
+    // metadata.lookup hits an in-process better-sqlite3 cache and is
+    // intentionally sync — adding await here would just add a tick of
+    // latency for no I/O benefit.
     const metadata = this.metadata.lookup({abs, rel, name});
     return metadata === undefined ? base : {...base, metadata};
   }
@@ -425,9 +444,23 @@ function statOrNull(p: string): fs.Stats | null {
   }
 }
 
-function readDirEntries(dir: string): fs.Dirent[] {
+// Async siblings used on the hot poll path. Node's sync FS calls block
+// the event loop, which is fine for one-shot validation but adds up
+// when /api/state polls every ~600 ms — a 50 k-entry traces tree
+// can take >100 ms per `readdirSync` walk and the server can't answer
+// anything else during that time. `fs.promises.*` dispatches to the
+// libuv worker pool, freeing the main thread.
+async function statOrNullAsync(p: string): Promise<fs.Stats | null> {
   try {
-    return fs.readdirSync(dir, {withFileTypes: true});
+    return await fs.promises.stat(p);
+  } catch {
+    return null;
+  }
+}
+
+async function readDirEntriesAsync(dir: string): Promise<fs.Dirent[]> {
+  try {
+    return await fs.promises.readdir(dir, {withFileTypes: true});
   } catch {
     return [];
   }

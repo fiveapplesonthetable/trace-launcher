@@ -45,10 +45,17 @@ export function createApiRouter(deps: ApiDeps) {
   router.post('/state', async (req, res) => {
     try {
       const {dir, query, filters, sort} = readStateRequest(req.body);
+      // Catalog walking + child snapshot both touch FS / sockets; run
+      // them in parallel so the slower one (typically the directory
+      // walk on a fresh poll) is what we wait on, not their sum.
+      const [catalogPage, running] = await Promise.all([
+        catalog.list(query, dir, filters, sort),
+        processes.snapshot(),
+      ]);
       res.json({
         config,
-        catalog: catalog.list(query, dir, filters, sort),
-        running: await processes.snapshot(),
+        catalog: catalogPage,
+        running,
         system: systemStats(catalog.root),
       });
     } catch (err) {
