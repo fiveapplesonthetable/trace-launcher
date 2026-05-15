@@ -272,8 +272,24 @@ class TraceRow
         ? `Prewarm failed: ${child.prewarmError ?? 'unknown reason'}. ` +
           'Click the bolt button to retry.'
         : null;
+    // RSS for the running child, when meaningful: zero or missing values
+    // (idle row, crashed child) are hidden so the chip doesn't acquire a
+    // useless "0 B" suffix.
+    const rssText =
+      child !== undefined && child.status !== 'crashed' && child.rssBytes > 0
+        ? formatSize(child.rssBytes)
+        : null;
     return m('.pf-tl-status-cell', [
-      this.chip(child),
+      m('.pf-tl-status-cell__row', [
+        this.chip(child),
+        rssText !== null
+          ? m(
+              'span.pf-tl-status-cell__rss',
+              {title: 'Resident set size for this trace_processor'},
+              rssText,
+            )
+          : null,
+      ]),
       actionError !== undefined
         ? m(
             '.pf-tl-row-error',

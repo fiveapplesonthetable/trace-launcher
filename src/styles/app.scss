@@ -825,6 +825,23 @@ code {
   gap: 4px;
 }
 
+// Chip + per-trace RSS share the top line so the two readings sit beside
+// each other instead of stacking and bloating the row.
+.pf-tl-status-cell__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pf-tl-status-cell__rss {
+  font-size: 10.5px;
+  color: var(--pf-color-text-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .pf-tl-status-cell__progress {
   max-width: 110px;
 }

@@ -302,9 +302,19 @@ export class ProcessManager {
     return described;
   }
 
-  /** Background task: wait for the port, hand off to the Prewarmer. */
+  /** Background task: wait for the port, hand off to the Prewarmer.
+   *
+   * Logs both the start and the outcome to stderr (one line each, with the
+   * basename + port) so a misconfigured host — missing Chromium binary,
+   * sandbox refusal, network block — is visible in the dev server output
+   * the same way the UI surfaces it. Without this the only signals are
+   * the chip transitioning and the inline error in the row, which can be
+   * easy to miss if the operator is looking at the terminal. */
   private async runPrewarm(child: Child): Promise<void> {
     if (this.prewarmer === undefined) return;
+    const tag = `${path.basename(child.trace)} :${child.port}`;
+    const startedMs = Date.now();
+    process.stderr.write(`prewarm: starting ${tag}\n`);
     try {
       const deadline = Date.now() + PREWARM_PORT_WAIT_MS;
       while (Date.now() < deadline) {
@@ -320,11 +330,18 @@ export class ProcessManager {
       if (child.exit === null && !child.stopping) {
         child.prewarm = 'prewarmed';
         child.prewarmError = null;
+        const elapsed = ((Date.now() - startedMs) / 1000).toFixed(1);
+        process.stderr.write(`prewarm: prewarmed ${tag} in ${elapsed}s\n`);
       }
     } catch (err) {
       if (child.exit !== null || child.stopping) return;
+      const message = err instanceof Error ? err.message : String(err);
       child.prewarm = 'prewarm-failed';
-      child.prewarmError = err instanceof Error ? err.message : String(err);
+      child.prewarmError = message;
+      const elapsed = ((Date.now() - startedMs) / 1000).toFixed(1);
+      process.stderr.write(
+        `prewarm: failed ${tag} after ${elapsed}s: ${message}\n`,
+      );
     }
   }
 
