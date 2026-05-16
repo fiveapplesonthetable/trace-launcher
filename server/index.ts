@@ -148,6 +148,7 @@ function main(argv: readonly string[]): void {
     shuttingDown = true;
     const stopped = processes.stopAll();
     metadata?.close();
+    catalog.close();
     log(`\n${signal} — stopped ${stopped} trace processor(s), exiting.`);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), SHUTDOWN_BACKSTOP_MS).unref();

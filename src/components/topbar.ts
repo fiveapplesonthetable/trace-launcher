@@ -35,9 +35,12 @@ export class TopBar implements m.ClassComponent {
         m(Button, {
           variant: 'minimal',
           icon: 'refresh',
-          title: 'Refresh now',
+          title: 'Refresh — re-scan the traces directory now',
           loading: store.initialLoad,
-          onclick: () => void store.refresh(),
+          // Force a server-side cache bypass: the user is explicitly
+          // asking "look at the disk again", and that contract must
+          // hold even if the fs watcher dropped an event.
+          onclick: () => void store.refresh({force: true}),
         }),
       ]),
     ]);

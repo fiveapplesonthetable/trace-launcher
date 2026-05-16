@@ -106,18 +106,30 @@ class AppStore {
 
   start(): void {
     document.documentElement.dataset.theme = this.theme;
-    void this.refresh();
+    // First load always asks the server to bypass its dir cache —
+    // covers the "I added a file then opened the page" case even if
+    // the fs watcher missed the event.
+    void this.refresh({force: true});
   }
 
   // --- catalog query -------------------------------------------------------
 
-  async refresh(): Promise<void> {
+  /**
+   * Re-fetches the application snapshot.
+   *
+   * The optional `force` flag asks the server to drop its directory
+   * cache and re-scan from disk. Set it on user-initiated refresh
+   * (the topbar button) and initial page load; leave it off for the
+   * background poll loop so steady-state polling stays cheap.
+   */
+  async refresh(opts: {force?: boolean} = {}): Promise<void> {
     const seq = ++this.requestSeq;
     const query = {
       dir: this.dir,
       query: this.query,
       filters: this.filters,
       ...(this.sort !== null ? {sort: this.sort} : {}),
+      ...(opts.force === true ? {refresh: true} : {}),
     };
     try {
       const next = await api.getState(query);

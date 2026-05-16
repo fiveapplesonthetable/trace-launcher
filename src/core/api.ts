@@ -58,12 +58,15 @@ function postJson<T>(path: string, body: unknown): Promise<T> {
 
 /** Selects which catalog page POST /api/state should return. The optional
  * sort is only set once the user has clicked a column header; when absent
- * the server falls back to its breadth-first natural order. */
+ * the server falls back to its breadth-first natural order. `refresh` opts
+ * into a server-side cache bypass — set on the manual refresh button and
+ * initial page load, omitted on polls. */
 export interface StateQuery {
   readonly dir: string;
   readonly query: string;
   readonly filters: readonly CatalogFilter[];
   readonly sort?: {readonly column: string; readonly direction: 'asc' | 'desc'};
+  readonly refresh?: boolean;
 }
 
 function discard(): void {}

@@ -194,6 +194,14 @@ export interface StateRequest {
   readonly query: string;
   readonly filters: readonly CatalogFilter[];
   readonly sort?: SortSpec;
+  /**
+   * When true the server bypasses its directory-listing cache and
+   * re-reads the filesystem from scratch. The client sends this on
+   * the initial page load and the manual refresh button — never on
+   * background polls. Guarantees that a page reload always reflects
+   * on-disk state, even if the fs watcher missed an event.
+   */
+  readonly refresh?: boolean;
 }
 
 /** Response of GET /api/metadata/suggest — autocomplete values for a column. */

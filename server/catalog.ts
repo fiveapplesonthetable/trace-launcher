@@ -86,6 +86,22 @@ export class Catalog {
    */
   private readonly allowList: readonly string[] | null;
 
+  /**
+   * Per-directory `readdir` cache. Populated lazily as the catalog
+   * walks the tree; invalidated when `fs.watch` reports any change
+   * inside `root`. Without this every /api/state poll re-walks the
+   * entire tree; with it, the steady-state cost of a poll is
+   * `metadata.lookup × N` plus a Map.get per directory.
+   *
+   * `null` means "caching disabled" — either selected-mode (no walking
+   * happens at all) or the platform's recursive watcher returned
+   * unsupported / errored at startup. In that case readDirCached
+   * falls through to a raw filesystem read every time, preserving
+   * the pre-cache behaviour.
+   */
+  private dirCache: Map<string, fs.Dirent[]> | null = null;
+  private watcher: fs.FSWatcher | null = null;
+
   constructor(
     tracesDir: string,
     requested: readonly string[],
@@ -100,6 +116,73 @@ export class Catalog {
       requested.length > 0
         ? requested.map((item) => this.resolveRequested(item))
         : null;
+    // Selected mode never reads directories, so the watcher / cache
+    // would be unused weight. Browse mode tries the recursive watch;
+    // on a platform that doesn't support it (Node < 20 on Linux, or
+    // a filesystem that doesn't fire watch events like some NFS
+    // mounts), the catch leaves dirCache null and every readdir
+    // falls through to the disk — same as before this change.
+    if (this.allowList === null) this.tryEnableWatchCache();
+  }
+
+  /** Releases the FS watcher. Idempotent — safe to call from a
+   *  shutdown handler that fires twice. */
+  close(): void {
+    if (this.watcher !== null) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+    this.dirCache = null;
+  }
+
+  /**
+   * Drops every cached readdir result so the next walk reads from
+   * disk. The HTTP API plumbs this through to `/api/state?refresh=1`
+   * (and the client triggers it on initial page load and the manual
+   * refresh button), so a user who just `mv`'d files into the
+   * traces dir can always force a fresh look.
+   */
+  clearCache(): void {
+    this.dirCache?.clear();
+  }
+
+  private tryEnableWatchCache(): void {
+    try {
+      this.watcher = fs.watch(
+        this.root,
+        {recursive: true, persistent: false},
+        () => this.dirCache?.clear(),
+      );
+      this.watcher.on('error', () => {
+        // Some filesystems (NFS, FUSE without inotify forwarding,
+        // very large trees that blow past the inotify watch limit)
+        // fire 'error' instead of throwing at construction. Detach
+        // and degrade gracefully — every poll re-scans from then on.
+        if (this.watcher !== null) {
+          this.watcher.close();
+          this.watcher = null;
+        }
+        this.dirCache = null;
+      });
+      this.dirCache = new Map();
+    } catch {
+      this.watcher = null;
+      this.dirCache = null;
+    }
+  }
+
+  /** Reads a directory, consulting the watcher-backed cache when
+   *  available. Cold hit = same cost as the uncached path; warm hit
+   *  = a Map.get with no syscalls. */
+  private async readDirCached(dir: string): Promise<fs.Dirent[]> {
+    const cache = this.dirCache;
+    if (cache !== null) {
+      const hit = cache.get(dir);
+      if (hit !== undefined) return hit;
+    }
+    const entries = await readDirEntriesAsync(dir);
+    cache?.set(dir, entries);
+    return entries;
   }
 
   get selectedMode(): boolean {
@@ -185,7 +268,14 @@ export class Catalog {
     relDir: string,
     filters: readonly CatalogFilter[] = [],
     sort?: SortSpec,
+    options: {readonly forceRescan?: boolean} = {},
   ): Promise<CatalogPage> {
+    // The client opts into a fresh disk read on initial page load
+    // and the manual refresh button — never on background polls.
+    // This gives users the always-works escape hatch they expect
+    // ("I added a file, hit refresh, it should be there") without
+    // making every poll pay the FS cost.
+    if (options.forceRescan === true) this.clearCache();
     const tokens = tokenize(query);
     const browse = await this.gather(tokens, relDir);
 
@@ -262,7 +352,7 @@ export class Catalog {
     // is a flat list of matching files.
     const dirs: DirEntry[] = searching
       ? []
-      : (await readDirEntriesAsync(currentDir))
+      : (await this.readDirCached(currentDir))
           .filter((d) => d.isDirectory())
           .map((d) => ({
             rel: this.rel(path.join(currentDir, d.name)),
@@ -273,7 +363,7 @@ export class Catalog {
     const candidates: string[] = [];
     let scanned = 0;
     const visit = async (dir: string): Promise<void> => {
-      const entries = await readDirEntriesAsync(dir);
+      const entries = await this.readDirCached(dir);
       const subdirs: string[] = [];
       for (const entry of entries) {
         const full = path.join(dir, entry.name);

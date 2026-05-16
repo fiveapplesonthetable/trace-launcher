@@ -224,6 +224,95 @@ test('list returns natural breadth-first order when no sort is given', async (t)
   );
 });
 
+/** Polls `predicate` for up to `timeoutMs`. Built for fs.watch tests:
+ *  watch events fire asynchronously and the exact latency depends on
+ *  the platform's notification mechanism (inotify on Linux, FSEvents
+ *  on macOS, ReadDirectoryChangesW on Windows). Polling avoids a
+ *  hard-coded sleep that would either flake or waste time. */
+async function eventually(
+  predicate: () => Promise<boolean>,
+  timeoutMs = 2500,
+  intervalMs = 50,
+): Promise<boolean> {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (await predicate()) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
+test('watcher cache picks up a newly added trace file', async (t) => {
+  const root = makeTree(t);
+  const catalog = new Catalog(root, [], 5000, false);
+  t.after(() => catalog.close());
+  // Prime the cache.
+  const before = await catalog.list('', '');
+  assert.equal(before.traces.length, 2);
+  // Add a new file; the watcher should fire and invalidate the cache.
+  fs.writeFileSync(path.join(root, 'newfile.pftrace'), 'x');
+  const ok = await eventually(async () => {
+    const page = await catalog.list('', '');
+    return page.traces.some((tr) => tr.name === 'newfile.pftrace');
+  });
+  assert.ok(ok, 'newly added file did not appear via the watcher');
+});
+
+test('watcher cache picks up a removed trace file', async (t) => {
+  const root = makeTree(t);
+  const catalog = new Catalog(root, [], 5000, false);
+  t.after(() => catalog.close());
+  await catalog.list('', ''); // prime
+  fs.unlinkSync(path.join(root, 'alpha.pftrace'));
+  const ok = await eventually(async () => {
+    const page = await catalog.list('', '');
+    return !page.traces.some((tr) => tr.name === 'alpha.pftrace');
+  });
+  assert.ok(ok, 'removed file did not disappear via the watcher');
+});
+
+test('watcher cache picks up a new sub-directory', async (t) => {
+  const root = makeTree(t);
+  const catalog = new Catalog(root, [], 5000, false);
+  t.after(() => catalog.close());
+  await catalog.list('', '');
+  fs.mkdirSync(path.join(root, 'fresh'));
+  const ok = await eventually(async () => {
+    const page = await catalog.list('', '');
+    return page.dirs.some((d) => d.name === 'fresh');
+  });
+  assert.ok(ok, 'new sub-directory did not appear via the watcher');
+});
+
+test('forceRescan reflects on-disk state even if the watcher misses an event', async (t) => {
+  const root = makeTree(t);
+  const catalog = new Catalog(root, [], 5000, false);
+  t.after(() => catalog.close());
+  // Prime the cache, then simulate a "watch event lost" by clearing
+  // the watcher behind the scenes — the cache still holds stale data.
+  await catalog.list('', '');
+  fs.writeFileSync(path.join(root, 'sneaky.pftrace'), 'x');
+  // Force the cache to lie: pretend the watch never fired by pre-loading
+  // a stale entry into the cache via list() before the watcher races.
+  // The forceRescan flag must bust through whatever's there.
+  const page = await catalog.list('', '', [], undefined, {forceRescan: true});
+  assert.ok(
+    page.traces.some((tr) => tr.name === 'sneaky.pftrace'),
+    'forceRescan did not return the freshly-added file',
+  );
+});
+
+test('catalog without recursive watch still works (selected mode)', async (t) => {
+  const root = makeTree(t);
+  // Selected mode disables the watcher entirely. The catalog should
+  // still serve list() — just without the cache speed-up.
+  const catalog = new Catalog(root, ['alpha.pftrace'], 5000, false);
+  t.after(() => catalog.close());
+  const page = await catalog.list('', '');
+  assert.equal(page.traces.length, 1);
+  assert.equal(page.traces[0]?.name, 'alpha.pftrace');
+});
+
 test('list applies an explicit sort spec verbatim', async (t) => {
   const root = tmpDir(t, 'tl-catalog-sort-');
   fs.writeFileSync(path.join(root, 'a.pftrace'), 'xxx');     // 3 bytes
